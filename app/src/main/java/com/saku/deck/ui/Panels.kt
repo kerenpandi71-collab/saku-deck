@@ -277,7 +277,7 @@ fun MappingDialog(c: DeckController) {
                     }
                 }
                 OutlinedButton(onClick = { c.beginControlLayoutEdit() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Atur posisi A/B/X/Y + analog kanan")
+                    Text("Atur posisi A/B/X/Y + Spell/Regen/Recall + analog kanan")
                 }
                 OutlinedButton(onClick = { c.resetMobileLegendsMapping() }, modifier = Modifier.fillMaxWidth()) {
                     Text("Pulihkan preset ML")
