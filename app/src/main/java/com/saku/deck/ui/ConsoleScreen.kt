@@ -109,10 +109,10 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
         } else {
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val faceControls = listOf(
-                    Triple("face_x", KeyEvent.KEYCODE_BUTTON_X, Deck.ButtonX) to (65f * scale).dp,
-                    Triple("face_y", KeyEvent.KEYCODE_BUTTON_Y, Deck.ButtonY) to (65f * scale).dp,
-                    Triple("face_a", KeyEvent.KEYCODE_BUTTON_A, Deck.ButtonA) to (80f * scale).dp,
-                    Triple("face_b", KeyEvent.KEYCODE_BUTTON_B, Deck.ButtonB) to (65f * scale).dp,
+                    Triple("face_x", KeyEvent.KEYCODE_BUTTON_X, Deck.ButtonX) to 65.dp,
+                    Triple("face_y", KeyEvent.KEYCODE_BUTTON_Y, Deck.ButtonY) to 65.dp,
+                    Triple("face_a", KeyEvent.KEYCODE_BUTTON_A, Deck.ButtonA) to 80.dp,
+                    Triple("face_b", KeyEvent.KEYCODE_BUTTON_B, Deck.ButtonB) to 65.dp,
                 )
                 faceControls.forEach { (control, buttonSize) ->
                     val (id, keyCode, color) = control
@@ -139,12 +139,13 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
                     )
                 }
                 val extraControls = listOf(
-                    Triple("extra_spell", "SP", KeyEvent.KEYCODE_BUTTON_R2, Deck.Accent),
-                    Triple("extra_regen", "RG", KeyEvent.KEYCODE_BUTTON_L1, Deck.ButtonY),
-                    Triple("extra_recall", "RC", KeyEvent.KEYCODE_BUTTON_SELECT, Deck.ButtonX),
+                    Triple("extra_spell", "SP", KeyEvent.KEYCODE_BUTTON_R2) to Deck.Accent,
+                    Triple("extra_regen", "RG", KeyEvent.KEYCODE_BUTTON_L1) to Deck.ButtonY,
+                    Triple("extra_recall", "RC", KeyEvent.KEYCODE_BUTTON_SELECT) to Deck.ButtonX,
                 )
-                extraControls.forEach { (id, label, keyCode, color) ->
-                    val buttonSize = (50 * scale).dp
+                extraControls.forEach { (control, color) ->
+                    val (id, label, keyCode) = control
+                    val buttonSize = 50.dp
                     val position = c.controlPositions.first { it.id == id }
                     val buttonModifier = Modifier.offset(
                         x = maxWidth * position.x - buttonSize / 2,
