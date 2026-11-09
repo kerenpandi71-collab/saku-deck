@@ -274,7 +274,7 @@ fun DPad(diameter: Dp, onKey: (Int, Boolean) -> Unit) {
 
 /** Analog stick returning x/y in -1..1 (right/down positive). */
 @Composable
-fun AnalogStick(diameter: Dp, onMove: (Float, Float) -> Unit) {
+fun AnalogStick(diameter: Dp, onMove: (Float, Float, Boolean) -> Unit) {
     var knob by remember { mutableStateOf(Offset.Zero) }
     val callback by rememberUpdatedState(onMove)
 
@@ -291,7 +291,7 @@ fun AnalogStick(diameter: Dp, onMove: (Float, Float) -> Unit) {
                         val len = sqrt(v.x * v.x + v.y * v.y)
                         if (len > 1f) v /= len
                         knob = v
-                        callback(v.x, v.y)
+                        callback(v.x, v.y, true)
                     }
                     val down = awaitFirstDown(requireUnconsumed = false)
                     try {
@@ -306,7 +306,7 @@ fun AnalogStick(diameter: Dp, onMove: (Float, Float) -> Unit) {
                         }
                     } finally {
                         knob = Offset.Zero
-                        callback(0f, 0f)
+                        callback(0f, 0f, false)
                     }
                 }
             }

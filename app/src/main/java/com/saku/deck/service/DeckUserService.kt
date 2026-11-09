@@ -5,6 +5,8 @@ import android.os.Binder
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Process
+import android.os.SystemClock
+import android.util.Log
 import android.view.InputEvent
 import android.view.Surface
 import com.saku.deck.IDeckService
@@ -22,6 +24,8 @@ class DeckUserService : IDeckService.Stub() {
     private val lock = Any()
     private var callback: Any? = null
     private var displayId = -1
+    private var lastInputError = "Belum ada event input yang diuji."
+    private var lastInputLogAt = 0L
 
     init {
         runCatching { HiddenApiBypass.addHiddenApiExemptions("") }
@@ -54,7 +58,9 @@ class DeckUserService : IDeckService.Stub() {
     private val releaseMethod by lazy { ifaceMethod(DISPLAY_MANAGER, "releaseVirtualDisplay", 1) }
     private val injectMethod by lazy { ifaceMethod(INPUT_MANAGER, "injectInputEvent", 2) }
     private val setDisplayIdMethod by lazy {
-        InputEvent::class.java.getMethod("setDisplayId", Int::class.javaPrimitiveType)
+        InputEvent::class.java.getDeclaredMethod("setDisplayId", Int::class.javaPrimitiveType).apply {
+            isAccessible = true
+        }
     }
 
     private fun unwrap(t: Throwable): Throwable =
@@ -169,14 +175,34 @@ class DeckUserService : IDeckService.Stub() {
         return first
     }
 
+    @Synchronized
     override fun injectEvent(event: Bundle, displayId: Int) {
+        var input: InputEvent? = null
         try {
             event.classLoader = InputEvent::class.java.classLoader
-            val ev = event.getParcelable("event", InputEvent::class.java) ?: return
-            setDisplayIdMethod.invoke(ev, displayId)
-            injectMethod.invoke(inputManager, ev, 0)
-        } catch (_: Throwable) {
+            input = event.getParcelable("event", InputEvent::class.java) ?: return
+            setDisplayIdMethod.invoke(input, displayId)
+            val accepted = injectMethod.invoke(inputManager, input, 0) as? Boolean ?: false
+            lastInputError = if (accepted) "Event diterima oleh InputManager pada display $displayId."
+            else "InputManager menolak event untuk display $displayId."
+            if (!accepted) logInputFailure(lastInputError)
+        } catch (t: Throwable) {
+            lastInputError = "${unwrap(t).javaClass.simpleName}: ${unwrap(t).message ?: "injeksi input gagal"}"
+            logInputFailure(lastInputError, unwrap(t))
+        } finally {
+            (input as? android.view.MotionEvent)?.recycle()
         }
+    }
+
+    @Synchronized
+    override fun getInputStatus(): String = lastInputError
+
+    private fun logInputFailure(message: String, error: Throwable? = null) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastInputLogAt < 1_000L) return
+        lastInputLogAt = now
+        if (error == null) Log.e("SakuDeckInput", message)
+        else Log.e("SakuDeckInput", message, error)
     }
 
     override fun runShell(command: String): String = exec(listOf("/system/bin/sh", "-c", command))

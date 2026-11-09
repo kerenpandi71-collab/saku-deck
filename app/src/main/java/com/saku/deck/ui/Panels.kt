@@ -15,9 +15,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -25,8 +28,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -234,6 +239,54 @@ fun AppPicker(c: DeckController) {
             }
         }
     }
+}
+
+@Composable
+fun MappingDialog(c: DeckController) {
+    AlertDialog(
+        onDismissRequest = { c.closeMappingMenu() },
+        title = { Text("Mapping Mobile Legends") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 430.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Info("Pilih kontrol, lalu ketuk lokasi tombolnya pada layar game. Posisi disimpan di HP ini.")
+                c.touchMappings.forEach { target ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { c.armMapping(target.id) }
+                            .padding(horizontal = 9.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            target.badge,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                                .background(Deck.Accent).padding(horizontal = 8.dp, vertical = 6.dp),
+                        )
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            Text(target.label, color = Deck.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("${(target.x * 100).toInt()}%, ${(target.y * 100).toInt()}%", color = Deck.Ink.copy(alpha = 0.64f), fontSize = 10.sp)
+                        }
+                        Text("Atur ›", color = Deck.Accent, fontSize = 11.sp)
+                    }
+                }
+                OutlinedButton(onClick = { c.resetMobileLegendsMapping() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Pulihkan preset ML")
+                }
+                OutlinedButton(onClick = { c.checkInputStatus() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Cek status touch")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { c.closeMappingMenu() }) { Text("Selesai") }
+        },
+    )
 }
 
 @Composable

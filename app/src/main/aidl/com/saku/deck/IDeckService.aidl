@@ -26,4 +26,6 @@ interface IDeckService {
     String runShell(String command) = 7;
 
     int getUid() = 8;
+
+    String getInputStatus() = 9;
 }

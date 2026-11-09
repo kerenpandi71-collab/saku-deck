@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.graphics.Matrix
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -30,6 +29,15 @@ enum class ShizukuState { NOT_INSTALLED, NOT_RUNNING, NO_PERMISSION, CONNECTING,
 
 data class AppEntry(val label: String, val packageName: String, val component: String)
 
+data class TouchMapping(
+    val id: String,
+    val label: String,
+    val badge: String,
+    val keyCode: Int?,
+    val x: Float,
+    val y: Float,
+)
+
 /** Owns the Shizuku helper connection, the virtual display and all input sent to it. */
 class DeckController(private val app: Application) {
 
@@ -43,6 +51,10 @@ class DeckController(private val app: Application) {
     var message by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
         private set
+    var touchMappings by mutableStateOf(loadTouchMappings())
+        private set
+    var mappingMenuOpen by mutableStateOf(false)
+    var mappingTargetId by mutableStateOf<String?>(null)
 
     @Volatile
     private var service: IDeckService? = null
@@ -60,6 +72,10 @@ class DeckController(private val app: Application) {
     // lx, ly, rx, ry, left trigger, right trigger
     private val axes = FloatArray(6)
     private val keyDownTimes = HashMap<Int, Long>()
+    private data class ActiveTouch(val id: Int, var x: Float, var y: Float)
+    private val touchLock = Any()
+    private val activeTouches = LinkedHashMap<String, ActiveTouch>()
+    private var touchDownTime = 0L
 
     private val userServiceArgs by lazy {
         Shizuku.UserServiceArgs(ComponentName(app.packageName, DeckUserService::class.java.name))
@@ -181,6 +197,7 @@ class DeckController(private val app: Application) {
     }
 
     fun onSurfaceGone() {
+        releaseAllTouchPointers()
         surface = null
         val svc = service ?: return
         if (displayId >= 0) worker.execute { runCatching { svc.setSurface(Bundle()) } }
@@ -242,6 +259,7 @@ class DeckController(private val app: Application) {
     }
 
     fun shutdown() {
+        releaseAllTouchPointers()
         val svc = service ?: return
         worker.execute {
             runCatching { svc.releaseDisplay() }
@@ -280,12 +298,84 @@ class DeckController(private val app: Application) {
         }
     }
 
+    // ---- Mobile Legends touch mapping --------------------------------------
+
+    fun openMappingMenu() { mappingMenuOpen = true }
+    fun closeMappingMenu() { mappingMenuOpen = false }
+
+    fun armMapping(id: String) {
+        val target = touchMappings.firstOrNull { it.id == id } ?: return
+        mappingMenuOpen = false
+        mappingTargetId = id
+        message = "Atur ${target.label}: ketuk posisi tombol itu pada layar game."
+    }
+
+    fun setMappingPosition(id: String, x: Float, y: Float) {
+        val target = touchMappings.firstOrNull { it.id == id } ?: return
+        val updated = touchMappings.map {
+            if (it.id == id) it.copy(x = x.coerceIn(0.02f, 0.98f), y = y.coerceIn(0.02f, 0.98f)) else it
+        }
+        touchMappings = updated
+        val prefs = app.getSharedPreferences(MAPPING_PREFS, Context.MODE_PRIVATE).edit()
+        prefs.putFloat("${id}_x", targetX(updated, id))
+        prefs.putFloat("${id}_y", targetY(updated, id))
+        prefs.apply()
+        mappingTargetId = null
+        val saved = updated.first { it.id == id }
+        message = "${saved.label} tersimpan di ${kotlin.math.round(saved.x * 100).toInt()}%, ${kotlin.math.round(saved.y * 100).toInt()}%."
+    }
+
+    fun cancelMapping() {
+        mappingTargetId = null
+        mappingMenuOpen = false
+    }
+
+    fun checkInputStatus() {
+        val svc = service ?: run {
+            message = "Shizuku belum terhubung. Izin dan layanan perlu aktif sebelum touch bisa diuji."
+            return
+        }
+        worker.execute {
+            val result = runCatching { svc.getInputStatus() }
+                .getOrElse { "Tidak dapat membaca status input: ${it.message}" }
+            main.post { message = "Status touch: $result" }
+        }
+    }
+
+    fun resetMobileLegendsMapping() {
+        touchMappings = DEFAULT_TOUCH_MAPPINGS
+        val prefs = app.getSharedPreferences(MAPPING_PREFS, Context.MODE_PRIVATE).edit().clear()
+        DEFAULT_TOUCH_MAPPINGS.forEach {
+            prefs.putFloat("${it.id}_x", it.x)
+            prefs.putFloat("${it.id}_y", it.y)
+        }
+        prefs.apply()
+        mappingTargetId = null
+        mappingMenuOpen = false
+        message = "Preset Mobile Legends dipulihkan. Sesuaikan posisi jika layout game berbeda."
+    }
+
+    private fun loadTouchMappings(): List<TouchMapping> {
+        val prefs = app.getSharedPreferences(MAPPING_PREFS, Context.MODE_PRIVATE)
+        return DEFAULT_TOUCH_MAPPINGS.map {
+            it.copy(
+                x = prefs.getFloat("${it.id}_x", it.x).coerceIn(0.02f, 0.98f),
+                y = prefs.getFloat("${it.id}_y", it.y).coerceIn(0.02f, 0.98f),
+            )
+        }
+    }
+
     // ---- input --------------------------------------------------------------
 
     fun sendKey(keyCode: Int, down: Boolean) {
         val svc = service ?: return
         val id = displayId
         if (id < 0) return
+        val mapping = touchMappings.firstOrNull { it.keyCode == keyCode }
+        if (mapping != null) {
+            setMappedTouch("mapped:${mapping.id}", mapping.x * displayW, mapping.y * displayH, down)
+            return
+        }
         val now = SystemClock.uptimeMillis()
         val downTime = if (down) now.also { keyDownTimes[keyCode] = it } else keyDownTimes.remove(keyCode) ?: now
         val source = when (keyCode) {
@@ -303,10 +393,19 @@ class DeckController(private val app: Application) {
         inject(svc, ev, id)
     }
 
-    fun sendStick(right: Boolean, x: Float, y: Float) {
+    fun sendStick(right: Boolean, x: Float, y: Float, active: Boolean) {
         val base = if (right) 2 else 0
         axes[base] = x
         axes[base + 1] = y
+        val stickId = if (right) "right_stick" else "left_stick"
+        val stick = touchMappings.firstOrNull { it.id == stickId }
+        if (stick != null) {
+            val reachX = displayW * if (right) 0.12f else 0.075f
+            val reachY = displayH * if (right) 0.14f else 0.14f
+            val px = (stick.x * displayW + x * reachX).coerceIn(0f, displayW.toFloat())
+            val py = (stick.y * displayH + y * reachY).coerceIn(0f, displayH.toFloat())
+            setMappedTouch("mapped:${stick.id}", px, py, active)
+        }
         sendAxes()
     }
 
@@ -343,20 +442,134 @@ class DeckController(private val app: Application) {
         ev.recycle()
     }
 
-    /** Forwards a touch on the center screen to the virtual display. */
+    /** Forwards direct preview contacts into the same multi-pointer stream as mapped controls. */
     fun forwardTouch(e: MotionEvent, viewW: Int, viewH: Int): Boolean {
         val svc = service ?: return true
         val id = displayId
         if (id < 0 || pickerOpen) return true
-        val copy = MotionEvent.obtain(e)
-        if (displayW > 0 && viewW > 0 && viewH > 0 && (displayW != viewW || displayH != viewH)) {
-            copy.transform(Matrix().apply {
-                setScale(displayW / viewW.toFloat(), displayH / viewH.toFloat())
-            })
+        val target = mappingTargetId
+        if (target != null) {
+            if (e.actionMasked == MotionEvent.ACTION_UP && viewW > 0 && viewH > 0) {
+                setMappingPosition(target, e.x / viewW.toFloat(), e.y / viewH.toFloat())
+            }
+            return true
         }
-        inject(svc, copy, id)
-        copy.recycle()
+        if (displayW <= 0 || displayH <= 0 || viewW <= 0 || viewH <= 0) return true
+        synchronized(touchLock) {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    releaseDirectTouchesLocked()
+                    addTouchLocked(directTouchKey(e.getPointerId(0)),
+                        e.getX(0) * displayW / viewW, e.getY(0) * displayH / viewH)
+                }
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    updateDirectTouchesLocked(e, viewW, viewH)
+                    val i = e.actionIndex
+                    addTouchLocked(directTouchKey(e.getPointerId(i)),
+                        e.getX(i) * displayW / viewW, e.getY(i) * displayH / viewH)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    updateDirectTouchesLocked(e, viewW, viewH)
+                    if (activeTouches.isNotEmpty()) dispatchTouchLocked(MotionEvent.ACTION_MOVE)
+                }
+                MotionEvent.ACTION_POINTER_UP -> {
+                    updateDirectTouchesLocked(e, viewW, viewH)
+                    removeTouchLocked(directTouchKey(e.getPointerId(e.actionIndex)))
+                }
+                MotionEvent.ACTION_UP -> removeTouchLocked(directTouchKey(e.getPointerId(0)))
+                MotionEvent.ACTION_CANCEL -> releaseDirectTouchesLocked()
+            }
+        }
         return true
+    }
+
+    private fun directTouchKey(pointerId: Int) = "direct:$pointerId"
+
+    private fun updateDirectTouchesLocked(e: MotionEvent, viewW: Int, viewH: Int) {
+        for (i in 0 until e.pointerCount) {
+            activeTouches[directTouchKey(e.getPointerId(i))]?.let {
+                it.x = e.getX(i) * displayW / viewW
+                it.y = e.getY(i) * displayH / viewH
+            }
+        }
+    }
+
+    private fun addTouchLocked(key: String, x: Float, y: Float) {
+        if (activeTouches.containsKey(key) || activeTouches.size >= 10) return
+        val usedIds = activeTouches.values.map { it.id }.toSet()
+        val pointerId = (0..31).firstOrNull { it !in usedIds } ?: return
+        val wasEmpty = activeTouches.isEmpty()
+        val point = ActiveTouch(pointerId, x, y)
+        activeTouches[key] = point
+        val now = SystemClock.uptimeMillis()
+        if (wasEmpty) touchDownTime = now
+        val index = activeTouches.size - 1
+        dispatchTouchLocked(if (wasEmpty) MotionEvent.ACTION_DOWN else
+            MotionEvent.ACTION_POINTER_DOWN or (index shl MotionEvent.ACTION_POINTER_INDEX_SHIFT))
+    }
+
+    private fun setMappedTouch(key: String, x: Float, y: Float, pressed: Boolean) {
+        synchronized(touchLock) {
+            if (pressed) {
+                val point = activeTouches[key]
+                if (point == null) addTouchLocked(key, x, y)
+                else {
+                    point.x = x
+                    point.y = y
+                    dispatchTouchLocked(MotionEvent.ACTION_MOVE)
+                }
+            } else {
+                removeTouchLocked(key)
+            }
+        }
+    }
+
+    private fun removeTouchLocked(key: String) {
+        val index = activeTouches.keys.indexOf(key)
+        if (index < 0) return
+        val action = if (activeTouches.size == 1) MotionEvent.ACTION_UP else
+            MotionEvent.ACTION_POINTER_UP or (index shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
+        dispatchTouchLocked(action)
+        activeTouches.remove(key)
+        if (activeTouches.isEmpty()) touchDownTime = 0L
+    }
+
+    private fun releaseDirectTouchesLocked() {
+        activeTouches.keys.filter { it.startsWith("direct:") }.toList().forEach(::removeTouchLocked)
+    }
+
+    private fun releaseAllTouchPointers() {
+        synchronized(touchLock) {
+            activeTouches.keys.toList().forEach(::removeTouchLocked)
+        }
+    }
+
+    private fun dispatchTouchLocked(action: Int) {
+        val svc = service ?: return
+        val id = displayId
+        val entries = activeTouches.entries.toList()
+        if (id < 0 || entries.isEmpty()) return
+        val now = SystemClock.uptimeMillis()
+        val properties = Array(entries.size) { i ->
+            MotionEvent.PointerProperties().apply {
+                this.id = entries[i].value.id
+                toolType = MotionEvent.TOOL_TYPE_FINGER
+            }
+        }
+        val coordinates = Array(entries.size) { i ->
+            MotionEvent.PointerCoords().apply {
+                x = entries[i].value.x
+                y = entries[i].value.y
+                pressure = 1f
+                size = 1f
+            }
+        }
+        val event = MotionEvent.obtain(
+            touchDownTime.takeIf { it > 0L } ?: now, now, action, entries.size,
+            properties, coordinates, 0, 0, 1f, 1f, 0, 0,
+            InputDevice.SOURCE_TOUCHSCREEN, 0,
+        )
+        try { inject(svc, event, id) } finally { event.recycle() }
     }
 
     private fun inject(svc: IDeckService, ev: android.view.InputEvent, id: Int) {
@@ -380,7 +593,21 @@ class DeckController(private val app: Application) {
     companion object {
         const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         private const val REQUEST_CODE = 7
+        private const val MAPPING_PREFS = "mobile_legends_touch_mapping"
         // Virtual display density relative to the phone, so apps fit the smaller center screen.
         private const val DPI_SCALE = 0.75f
+        private val DEFAULT_TOUCH_MAPPINGS = listOf(
+            TouchMapping("left_stick", "Analog kiri", "LS", null, 0.16f, 0.80f),
+            TouchMapping("right_stick", "Analog kanan / kamera", "RS", null, 0.52f, 0.57f),
+            TouchMapping("skill_1", "Skill 1 • X", "S1", KeyEvent.KEYCODE_BUTTON_X, 0.78f, 0.72f),
+            TouchMapping("skill_2", "Skill 2 • Y", "S2", KeyEvent.KEYCODE_BUTTON_Y, 0.85f, 0.64f),
+            TouchMapping("ultimate", "Ultimate • B", "ULT", KeyEvent.KEYCODE_BUTTON_B, 0.91f, 0.71f),
+            TouchMapping("attack", "Serang • A", "ATK", KeyEvent.KEYCODE_BUTTON_A, 0.93f, 0.83f),
+            TouchMapping("recall", "Recall • Select", "REC", KeyEvent.KEYCODE_BUTTON_SELECT, 0.67f, 0.86f),
+            TouchMapping("regen", "Regen • L1", "REG", KeyEvent.KEYCODE_BUTTON_L1, 0.75f, 0.86f),
+            TouchMapping("custom_l2", "Sentuh kustom • L2", "L2", KeyEvent.KEYCODE_BUTTON_L2, 0.66f, 0.74f),
+            TouchMapping("quick_item", "Item cepat • R1", "R1", KeyEvent.KEYCODE_BUTTON_R1, 0.83f, 0.76f),
+            TouchMapping("battle_spell", "Battle Spell • R2", "SP", KeyEvent.KEYCODE_BUTTON_R2, 0.83f, 0.86f),
+        )
     }
 }
