@@ -108,37 +108,81 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
             )
         } else {
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                val button = (42 * scale).dp
-                val stickSize = (86 * scale).dp
-                val controls = listOf(
-                    Triple("face_x", KeyEvent.KEYCODE_BUTTON_X, Deck.ButtonX),
-                    Triple("face_y", KeyEvent.KEYCODE_BUTTON_Y, Deck.ButtonY),
-                    Triple("face_a", KeyEvent.KEYCODE_BUTTON_A, Deck.ButtonA),
-                    Triple("face_b", KeyEvent.KEYCODE_BUTTON_B, Deck.ButtonB),
+                val faceControls = listOf(
+                    Triple("face_x", KeyEvent.KEYCODE_BUTTON_X, Deck.ButtonX) to (65f * scale).dp,
+                    Triple("face_y", KeyEvent.KEYCODE_BUTTON_Y, Deck.ButtonY) to (65f * scale).dp,
+                    Triple("face_a", KeyEvent.KEYCODE_BUTTON_A, Deck.ButtonA) to (80f * scale).dp,
+                    Triple("face_b", KeyEvent.KEYCODE_BUTTON_B, Deck.ButtonB) to (65f * scale).dp,
                 )
-                controls.forEach { (id, keyCode, color) ->
+                faceControls.forEach { (control, buttonSize) ->
+                    val (id, keyCode, color) = control
                     val position = c.controlPositions.first { it.id == id }
                     SkillWheelButton(
                         label = id.substringAfter("face_").uppercase(),
                         color = color,
-                        diameter = button,
+                        diameter = buttonSize,
                         modifier = Modifier.offset(
-                            x = maxWidth * position.x - button / 2,
-                            y = maxHeight * position.y - button / 2,
+                            x = maxWidth * position.x - buttonSize / 2,
+                            y = maxHeight * position.y - buttonSize / 2,
                         ),
                         layoutEditing = c.controlLayoutEditing,
                         onWheel = { dx, dy, pressed -> c.sendSkillWheel(keyCode, dx, dy, pressed) },
                         onPositionDrag = { dx, dy ->
                             c.moveControlPosition(
                                 id,
-                                position.x + dx * button.value / maxWidth.value.coerceAtLeast(1f),
-                                position.y + dy * button.value / maxHeight.value.coerceAtLeast(1f),
-                                button.value / (2 * maxWidth.value.coerceAtLeast(1f)),
-                                button.value / (2 * maxHeight.value.coerceAtLeast(1f)),
+                                position.x + dx * buttonSize.value / maxWidth.value.coerceAtLeast(1f),
+                                position.y + dy * buttonSize.value / maxHeight.value.coerceAtLeast(1f),
+                                buttonSize.value / (2 * maxWidth.value.coerceAtLeast(1f)),
+                                buttonSize.value / (2 * maxHeight.value.coerceAtLeast(1f)),
                             )
                         },
                     )
                 }
+                val extraControls = listOf(
+                    Triple("extra_spell", "SP", KeyEvent.KEYCODE_BUTTON_R2, Deck.Accent),
+                    Triple("extra_regen", "RG", KeyEvent.KEYCODE_BUTTON_L1, Deck.ButtonY),
+                    Triple("extra_recall", "RC", KeyEvent.KEYCODE_BUTTON_SELECT, Deck.ButtonX),
+                )
+                extraControls.forEach { (id, label, keyCode, color) ->
+                    val buttonSize = (50 * scale).dp
+                    val position = c.controlPositions.first { it.id == id }
+                    val buttonModifier = Modifier.offset(
+                        x = maxWidth * position.x - buttonSize / 2,
+                        y = maxHeight * position.y - buttonSize / 2,
+                    )
+                    val moveButton = { dx: Float, dy: Float ->
+                        c.moveControlPosition(
+                            id,
+                            position.x + dx * buttonSize.value / maxWidth.value.coerceAtLeast(1f),
+                            position.y + dy * buttonSize.value / maxHeight.value.coerceAtLeast(1f),
+                            buttonSize.value / (2 * maxWidth.value.coerceAtLeast(1f)),
+                            buttonSize.value / (2 * maxHeight.value.coerceAtLeast(1f)),
+                        )
+                    }
+                    if (id == "extra_spell") {
+                        SkillWheelButton(
+                            label = label,
+                            color = color,
+                            diameter = buttonSize,
+                            modifier = buttonModifier,
+                            layoutEditing = c.controlLayoutEditing,
+                            // Spell follows Y's hold-drag-release skill-wheel behavior.
+                            onWheel = { dx, dy, pressed -> c.sendSkillWheel(keyCode, dx, dy, pressed) },
+                            onPositionDrag = moveButton,
+                        )
+                    } else {
+                        LayoutRoundButton(
+                            label = label,
+                            color = color,
+                            diameter = buttonSize,
+                            modifier = buttonModifier,
+                            layoutEditing = c.controlLayoutEditing,
+                            onPress = { pressed -> c.sendKey(keyCode, pressed) },
+                            onPositionDrag = moveButton,
+                        )
+                    }
+                }
+                val stickSize = (86 * scale).dp
                 val stickPosition = c.controlPositions.first { it.id == "right_stick" }
                 AnalogStick(
                     diameter = stickSize,
