@@ -68,6 +68,8 @@ class DeckController(private val app: Application) {
     private var binding = false
     private var pendingEnsure = false
     private val worker = Executors.newSingleThreadExecutor()
+    // Keep Binder input injection off the Compose/UI thread; preserve event order.
+    private val inputWorker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
     private var surface: Surface? = null
@@ -365,7 +367,7 @@ class DeckController(private val app: Application) {
     fun beginControlLayoutEdit() {
         mappingMenuOpen = false
         controlLayoutEditing = true
-        message = "Seret X, Y, A, B, dan analog kanan ke posisi yang diinginkan, lalu tekan SIMPAN."
+        message = "Seret X/Y/A/B, Spell, Regen, Recall, dan analog kanan ke posisi yang diinginkan, lalu tekan SIMPAN."
     }
 
     fun moveControlPosition(id: String, x: Float, y: Float, marginX: Float = 0.12f, marginY: Float = 0.12f) {
@@ -671,7 +673,23 @@ class DeckController(private val app: Application) {
     }
 
     private fun inject(svc: IDeckService, ev: android.view.InputEvent, id: Int) {
-        runCatching { svc.injectEvent(Bundle().apply { putParcelable("event", ev) }, id) }
+        // Callers recycle MotionEvents immediately; copy before queuing the Binder transaction.
+        val queuedEvent: android.view.InputEvent = when (ev) {
+            is MotionEvent -> MotionEvent.obtain(ev)
+            is KeyEvent -> KeyEvent(ev)
+            else -> return
+        }
+        runCatching {
+            inputWorker.execute {
+                try {
+                    svc.injectEvent(Bundle().apply { putParcelable("event", queuedEvent) }, id)
+                } catch (_: Throwable) {
+                    // Shizuku may disconnect while an event is waiting in the queue.
+                } finally {
+                    (queuedEvent as? MotionEvent)?.recycle()
+                }
+            }
+        }.onFailure { (queuedEvent as? MotionEvent)?.recycle() }
     }
 
     /** Returns true when the back press was used by the deck. */
@@ -713,6 +731,9 @@ class DeckController(private val app: Application) {
             ControlPosition("face_y", 0.23f, 0.36f),
             ControlPosition("face_a", 0.77f, 0.36f),
             ControlPosition("face_b", 0.50f, 0.55f),
+            ControlPosition("extra_spell", 0.91f, 0.58f),
+            ControlPosition("extra_regen", 0.78f, 0.88f),
+            ControlPosition("extra_recall", 0.94f, 0.86f),
             ControlPosition("right_stick", 0.50f, 0.82f),
         )
     }
