@@ -213,7 +213,7 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
                         if (c.externalKeyboardOpen) "TUTUP KBD" else "KBD LUAR",
                         Modifier.clip(RoundedCornerShape(50))
                             .background(if (c.externalKeyboardOpen) Deck.Accent else Color.Black.copy(alpha = 0.76f))
-                            .clickable { c.setExternalKeyboardOpen(!c.externalKeyboardOpen) }
+                            .clickable { c.updateExternalKeyboardOpen(!c.externalKeyboardOpen) }
                             .padding(horizontal = 9.dp, vertical = 6.dp),
                         color = Color.White,
                         fontSize = 9.sp,
@@ -368,7 +368,7 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
             "TUTUP",
             Modifier.clickable {
                 keyboard?.hide()
-                c.setExternalKeyboardOpen(false)
+                c.updateExternalKeyboardOpen(false)
             }.padding(5.dp),
             color = Deck.Accent,
             fontSize = 10.sp,

@@ -399,7 +399,7 @@ class DeckController(private val app: Application) {
         message = "Layout awal dipulihkan. Tekan SIMPAN untuk menyimpan."
     }
 
-    fun setExternalKeyboardOpen(open: Boolean) {
+    fun updateExternalKeyboardOpen(open: Boolean) {
         externalKeyboardOpen = open
     }
 
