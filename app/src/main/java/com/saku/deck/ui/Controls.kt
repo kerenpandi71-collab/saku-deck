@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -121,6 +122,71 @@ fun FaceButtons(diameter: Dp, onKey: (Int, Boolean) -> Unit) {
         Box(Modifier.align(Alignment.BottomCenter)) {
             RoundButton("B", Deck.ButtonB, button) { onKey(KeyEvent.KEYCODE_BUTTON_B, it) }
         }
+    }
+}
+
+/** Tap to activate a mapped action, or hold-drag-release to aim a Mobile Legends skill wheel. */
+@Composable
+fun SkillWheelButton(
+    label: String,
+    color: Color,
+    diameter: Dp,
+    modifier: Modifier = Modifier,
+    layoutEditing: Boolean,
+    onWheel: (Float, Float, Boolean) -> Unit,
+    onPositionDrag: (Float, Float) -> Unit,
+) {
+    var active by remember { mutableStateOf(false) }
+    val wheel by rememberUpdatedState(onWheel)
+    val move by rememberUpdatedState(onPositionDrag)
+    val haptic = rememberHaptic()
+    val gesture = Modifier.pointerInput(layoutEditing) {
+        if (layoutEditing) {
+            detectDragGestures { change, amount ->
+                change.consume()
+                move(amount.x / size.width.coerceAtLeast(1), amount.y / size.height.coerceAtLeast(1))
+            }
+        } else {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                down.consume()
+                active = true
+                haptic()
+                wheel(0f, 0f, true)
+                try {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        val dx = (change.position.x - down.position.x) / size.width.coerceAtLeast(1)
+                        val dy = (change.position.y - down.position.y) / size.height.coerceAtLeast(1)
+                        wheel(dx, dy, true)
+                        change.consume()
+                    }
+                } finally {
+                    active = false
+                    wheel(0f, 0f, false)
+                }
+            }
+        }
+    }
+    Box(
+        modifier
+            .size(diameter)
+            .shadow(if (active) 1.dp else 4.dp, CircleShape)
+            .clip(CircleShape)
+            .background(if (active) color.pressedTone() else color)
+            .then(gesture),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = (diameter.value * 0.4f).sp)
+        Text(
+            if (layoutEditing) "DRAG" else "↗",
+            Modifier.align(Alignment.BottomEnd),
+            color = Color.White.copy(alpha = 0.82f),
+            fontSize = if (layoutEditing) 6.sp else 9.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -274,39 +340,53 @@ fun DPad(diameter: Dp, onKey: (Int, Boolean) -> Unit) {
 
 /** Analog stick returning x/y in -1..1 (right/down positive). */
 @Composable
-fun AnalogStick(diameter: Dp, onMove: (Float, Float, Boolean) -> Unit) {
+fun AnalogStick(
+    diameter: Dp,
+    onMove: (Float, Float, Boolean) -> Unit,
+    layoutEditing: Boolean = false,
+    onPositionDrag: (Float, Float) -> Unit = { _, _ -> },
+    modifier: Modifier = Modifier,
+) {
     var knob by remember { mutableStateOf(Offset.Zero) }
     val callback by rememberUpdatedState(onMove)
+    val moveLayout by rememberUpdatedState(onPositionDrag)
 
     Box(
-        Modifier
+        modifier
             .size(diameter)
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    val area = size
-                    val center = Offset(area.width / 2f, area.height / 2f)
-                    val reach = area.width / 2f * 0.7f
-                    fun set(pos: Offset) {
-                        var v = (pos - center) / reach
-                        val len = sqrt(v.x * v.x + v.y * v.y)
-                        if (len > 1f) v /= len
-                        knob = v
-                        callback(v.x, v.y, true)
+            .pointerInput(layoutEditing) {
+                if (layoutEditing) {
+                    detectDragGestures { change, amount ->
+                        change.consume()
+                        moveLayout(amount.x / size.width.coerceAtLeast(1), amount.y / size.height.coerceAtLeast(1))
                     }
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    try {
-                        set(down.position)
-                        down.consume()
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
-                            set(change.position)
-                            change.consume()
+                } else {
+                    awaitEachGesture {
+                        val area = size
+                        val center = Offset(area.width / 2f, area.height / 2f)
+                        val reach = area.width / 2f * 0.7f
+                        fun set(pos: Offset) {
+                            var v = (pos - center) / reach
+                            val len = sqrt(v.x * v.x + v.y * v.y)
+                            if (len > 1f) v /= len
+                            knob = v
+                            callback(v.x, v.y, true)
                         }
-                    } finally {
-                        knob = Offset.Zero
-                        callback(0f, 0f, false)
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        try {
+                            set(down.position)
+                            down.consume()
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                                set(change.position)
+                                change.consume()
+                            }
+                        } finally {
+                            knob = Offset.Zero
+                            callback(0f, 0f, false)
+                        }
                     }
                 }
             }
@@ -322,6 +402,9 @@ fun AnalogStick(diameter: Dp, onMove: (Float, Float, Boolean) -> Unit) {
             drawCircle(Deck.Control, r * 0.62f, k)
             drawCircle(Deck.ControlDark, r * 0.44f, k, style = Stroke(r * 0.05f))
             drawCircle(Color.White.copy(alpha = 0.10f), r * 0.30f, k - Offset(r * 0.12f, r * 0.14f))
+        }
+        if (layoutEditing) {
+            Text("DRAG", Modifier.align(Alignment.BottomCenter), color = Deck.Ink, fontSize = 7.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

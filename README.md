@@ -13,8 +13,10 @@ APK terbaru selalu ada di sini:
 2. Pasang `SakuDeck.apk`, buka, lalu tekan **Izinkan** untuk memberi izin Shizuku.
 3. Pilih aplikasi atau game. Aplikasinya terbuka di layar tengah.
 4. Tombol **MENU** (oranye) membuka daftar aplikasi lagi. **KEMBALI** mengirim tombol Back; **HOME** mengirim tombol Home Android.
-5. Untuk ML, tekan **MAP** di layar tengah. Pilih fungsi, lalu ketuk posisi tombol itu pada game. Analog kiri menggerakkan joystick dengan touch, analog kanan mengirim drag kamera, dan tombol X/Y/B/A, Select, L1/L2, serta R1/R2 dapat dipetakan. Preset awal: X/Y/B/A untuk Skill 1/2/Ultimate/Serang, Select untuk Recall, L1 untuk Regen, R2 untuk Battle Spell, R1 untuk item cepat. Posisi mapping disimpan di perangkat dan dapat dikalibrasi ulang untuk layout game yang berbeda.
-6. Di editor mapping, **Cek status touch** menampilkan hasil injeksi terakhir dari layanan Shizuku.
+5. Untuk ML, tekan **MAP** di layar tengah. Pilih fungsi, lalu ketuk posisi tombol itu pada game. Tombol **A/B/X/Y** memakai pola tekan-tahan, seret untuk membidik skill wheel, lalu lepaskan untuk cast. Pilih **Atur posisi A/B/X/Y + analog kanan** untuk menyeret kontrol; tekan **SIMPAN** agar layout tersimpan di perangkat. **RESET** memulihkan posisi awal dan **BATAL** membuang perubahan yang belum disimpan.
+6. Keyboard internal mengikuti dukungan IME pada Android/ROM. Jika tidak muncul di virtual display, ketuk kolom input di aplikasi tujuan lalu tekan **KBD LUAR** untuk membuka Gboard di layar utama dan meneruskan ketikan ke virtual display. Keyboard luar mengirim teks standar; karakter khusus dapat bergantung pada dukungan keymap Android.
+7. Analog kiri menggerakkan joystick dengan touch, analog kanan mengirim drag kamera. Preset mapping ML: X/Y/B/A untuk Skill 1/2/Ultimate/Serang, Select untuk Recall, L1 untuk Regen, R2 untuk Battle Spell, R1 untuk item cepat. Posisi mapping layar game dapat dikalibrasi ulang untuk layout game yang berbeda.
+8. Di editor mapping, **Cek status touch** menampilkan hasil injeksi terakhir dari layanan Shizuku.
 
 Kalau aplikasi yang dipilih sudah terbuka di layar utama, tutup dulu dari menu aplikasi terbaru, lalu buka lagi dari Saku Deck.
 

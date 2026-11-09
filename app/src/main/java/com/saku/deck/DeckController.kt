@@ -38,6 +38,8 @@ data class TouchMapping(
     val y: Float,
 )
 
+data class ControlPosition(val id: String, val x: Float, val y: Float)
+
 /** Owns the Shizuku helper connection, the virtual display and all input sent to it. */
 class DeckController(private val app: Application) {
 
@@ -53,8 +55,13 @@ class DeckController(private val app: Application) {
         private set
     var touchMappings by mutableStateOf(loadTouchMappings())
         private set
+    var controlPositions by mutableStateOf(loadControlPositions())
+        private set
     var mappingMenuOpen by mutableStateOf(false)
     var mappingTargetId by mutableStateOf<String?>(null)
+    var controlLayoutEditing by mutableStateOf(false)
+        private set
+    var externalKeyboardOpen by mutableStateOf(false)
 
     @Volatile
     private var service: IDeckService? = null
@@ -355,6 +362,57 @@ class DeckController(private val app: Application) {
         message = "Preset Mobile Legends dipulihkan. Sesuaikan posisi jika layout game berbeda."
     }
 
+    fun beginControlLayoutEdit() {
+        mappingMenuOpen = false
+        controlLayoutEditing = true
+        message = "Seret X, Y, A, B, dan analog kanan ke posisi yang diinginkan, lalu tekan SIMPAN."
+    }
+
+    fun moveControlPosition(id: String, x: Float, y: Float, marginX: Float = 0.12f, marginY: Float = 0.12f) {
+        if (!controlLayoutEditing) return
+        val minX = marginX.coerceIn(0.05f, 0.45f)
+        val minY = marginY.coerceIn(0.05f, 0.45f)
+        controlPositions = controlPositions.map {
+            if (it.id == id) it.copy(x = x.coerceIn(minX, 1f - minX), y = y.coerceIn(minY, 1f - minY)) else it
+        }
+    }
+
+    fun saveControlLayout() {
+        val prefs = app.getSharedPreferences(CONTROL_LAYOUT_PREFS, Context.MODE_PRIVATE).edit().clear()
+        controlPositions.forEach {
+            prefs.putFloat("${it.id}_x", it.x)
+            prefs.putFloat("${it.id}_y", it.y)
+        }
+        prefs.apply()
+        controlLayoutEditing = false
+        message = "Posisi tombol dan analog berhasil disimpan."
+    }
+
+    fun cancelControlLayoutEdit() {
+        controlPositions = loadControlPositions()
+        controlLayoutEditing = false
+        message = "Perubahan layout dibatalkan."
+    }
+
+    fun resetControlLayout() {
+        controlPositions = DEFAULT_CONTROL_POSITIONS
+        message = "Layout awal dipulihkan. Tekan SIMPAN untuk menyimpan."
+    }
+
+    fun setExternalKeyboardOpen(open: Boolean) {
+        externalKeyboardOpen = open
+    }
+
+    private fun loadControlPositions(): List<ControlPosition> {
+        val prefs = app.getSharedPreferences(CONTROL_LAYOUT_PREFS, Context.MODE_PRIVATE)
+        return DEFAULT_CONTROL_POSITIONS.map {
+            it.copy(
+                x = prefs.getFloat("${it.id}_x", it.x).coerceIn(0.12f, 0.88f),
+                y = prefs.getFloat("${it.id}_y", it.y).coerceIn(0.12f, 0.88f),
+            )
+        }
+    }
+
     private fun loadTouchMappings(): List<TouchMapping> {
         val prefs = app.getSharedPreferences(MAPPING_PREFS, Context.MODE_PRIVATE)
         return DEFAULT_TOUCH_MAPPINGS.map {
@@ -391,6 +449,46 @@ class DeckController(private val app: Application) {
             keyCode, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, source
         )
         inject(svc, ev, id)
+    }
+
+    /** A skill-wheel button holds the mapped contact, moves it while dragged, then releases it. */
+    fun sendSkillWheel(keyCode: Int, dragX: Float, dragY: Float, pressed: Boolean) {
+        val mapping = touchMappings.firstOrNull { it.keyCode == keyCode }
+        if (mapping == null) {
+            sendKey(keyCode, pressed)
+            return
+        }
+        val reachX = displayW * 0.18f
+        val reachY = displayH * 0.18f
+        val x = (mapping.x * displayW + dragX.coerceIn(-1.5f, 1.5f) * reachX)
+            .coerceIn(0f, displayW.toFloat())
+        val y = (mapping.y * displayH + dragY.coerceIn(-1.5f, 1.5f) * reachY)
+            .coerceIn(0f, displayH.toFloat())
+        setMappedTouch("mapped:${mapping.id}", x, y, pressed)
+    }
+
+    /** Converts committed text from the host-display IME into key events on the virtual display. */
+    fun sendText(text: String): Boolean {
+        if (text.isEmpty()) return true
+        val svc = service ?: return false
+        val id = displayId
+        if (id < 0) return false
+        val events = runCatching {
+            KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD).getEvents(text.toCharArray())
+        }.getOrNull()
+        if (events == null) {
+            message = "Karakter ini tidak didukung oleh keyboard virtual. Coba huruf, angka, atau tanda baca umum."
+            return false
+        }
+        events.forEach { inject(svc, it, id) }
+        return true
+    }
+
+    fun sendBackspace(count: Int) {
+        repeat(count.coerceIn(0, 100)) {
+            sendKey(KeyEvent.KEYCODE_DEL, true)
+            sendKey(KeyEvent.KEYCODE_DEL, false)
+        }
     }
 
     fun sendStick(right: Boolean, x: Float, y: Float, active: Boolean) {
@@ -594,6 +692,7 @@ class DeckController(private val app: Application) {
         const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         private const val REQUEST_CODE = 7
         private const val MAPPING_PREFS = "mobile_legends_touch_mapping"
+        private const val CONTROL_LAYOUT_PREFS = "mobile_legends_control_layout"
         // Virtual display density relative to the phone, so apps fit the smaller center screen.
         private const val DPI_SCALE = 0.75f
         private val DEFAULT_TOUCH_MAPPINGS = listOf(
@@ -608,6 +707,13 @@ class DeckController(private val app: Application) {
             TouchMapping("custom_l2", "Sentuh kustom • L2", "L2", KeyEvent.KEYCODE_BUTTON_L2, 0.66f, 0.74f),
             TouchMapping("quick_item", "Item cepat • R1", "R1", KeyEvent.KEYCODE_BUTTON_R1, 0.83f, 0.76f),
             TouchMapping("battle_spell", "Battle Spell • R2", "SP", KeyEvent.KEYCODE_BUTTON_R2, 0.83f, 0.86f),
+        )
+        private val DEFAULT_CONTROL_POSITIONS = listOf(
+            ControlPosition("face_x", 0.50f, 0.17f),
+            ControlPosition("face_y", 0.23f, 0.36f),
+            ControlPosition("face_a", 0.77f, 0.36f),
+            ControlPosition("face_b", 0.50f, 0.55f),
+            ControlPosition("right_stick", 0.50f, 0.82f),
         )
     }
 }

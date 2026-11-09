@@ -6,6 +6,8 @@ import android.view.SurfaceView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -21,14 +23,28 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -56,6 +72,13 @@ fun ConsoleScreen(c: DeckController) {
             ScreenArea(c, Modifier.weight(1f).fillMaxHeight().padding(horizontal = 4.dp))
             SidePanel(left = false, c = c, scale = scale, modifier = Modifier.width(side).fillMaxHeight())
         }
+        if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
+        if (c.externalKeyboardOpen) {
+            ExternalKeyboardBridge(
+                c,
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth(0.82f),
+            )
+        }
         if (c.mappingMenuOpen) MappingDialog(c)
     }
 }
@@ -79,11 +102,64 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
 
         if (left) {
             DPad((112 * scale).dp) { code, down -> c.sendKey(code, down) }
+            AnalogStick(
+                diameter = (92 * scale).dp,
+                onMove = { x, y, active -> c.sendStick(false, x, y, active) },
+            )
         } else {
-            FaceButtons((118 * scale).dp) { code, down -> c.sendKey(code, down) }
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val button = (42 * scale).dp
+                val stickSize = (86 * scale).dp
+                val controls = listOf(
+                    Triple("face_x", KeyEvent.KEYCODE_BUTTON_X, Deck.ButtonX),
+                    Triple("face_y", KeyEvent.KEYCODE_BUTTON_Y, Deck.ButtonY),
+                    Triple("face_a", KeyEvent.KEYCODE_BUTTON_A, Deck.ButtonA),
+                    Triple("face_b", KeyEvent.KEYCODE_BUTTON_B, Deck.ButtonB),
+                )
+                controls.forEach { (id, keyCode, color) ->
+                    val position = c.controlPositions.first { it.id == id }
+                    SkillWheelButton(
+                        label = id.substringAfter("face_").uppercase(),
+                        color = color,
+                        diameter = button,
+                        modifier = Modifier.offset(
+                            x = maxWidth * position.x - button / 2,
+                            y = maxHeight * position.y - button / 2,
+                        ),
+                        layoutEditing = c.controlLayoutEditing,
+                        onWheel = { dx, dy, pressed -> c.sendSkillWheel(keyCode, dx, dy, pressed) },
+                        onPositionDrag = { dx, dy ->
+                            c.moveControlPosition(
+                                id,
+                                position.x + dx * button.value / maxWidth.value.coerceAtLeast(1f),
+                                position.y + dy * button.value / maxHeight.value.coerceAtLeast(1f),
+                                button.value / (2 * maxWidth.value.coerceAtLeast(1f)),
+                                button.value / (2 * maxHeight.value.coerceAtLeast(1f)),
+                            )
+                        },
+                    )
+                }
+                val stickPosition = c.controlPositions.first { it.id == "right_stick" }
+                AnalogStick(
+                    diameter = stickSize,
+                    modifier = Modifier.offset(
+                        x = maxWidth * stickPosition.x - stickSize / 2,
+                        y = maxHeight * stickPosition.y - stickSize / 2,
+                    ),
+                    onMove = { x, y, active -> c.sendStick(true, x, y, active) },
+                    layoutEditing = c.controlLayoutEditing,
+                    onPositionDrag = { dx, dy ->
+                        c.moveControlPosition(
+                            "right_stick",
+                            stickPosition.x + dx * stickSize.value / maxWidth.value.coerceAtLeast(1f),
+                            stickPosition.y + dy * stickSize.value / maxHeight.value.coerceAtLeast(1f),
+                            stickSize.value / (2 * maxWidth.value.coerceAtLeast(1f)),
+                            stickSize.value / (2 * maxHeight.value.coerceAtLeast(1f)),
+                        )
+                    },
+                )
+            }
         }
-
-        AnalogStick((92 * scale).dp) { x, y, active -> c.sendStick(!left, x, y, active) }
 
         Row(
             horizontalArrangement = Arrangement.spacedBy((10 * scale).dp),
@@ -129,17 +205,29 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
             }
             if (c.currentApp != null && c.displayId >= 0) {
                 val mappingActive = c.mappingTargetId != null
-                Text(
-                    if (mappingActive) "BATAL MAP" else "MAP",
-                    Modifier.align(Alignment.TopEnd)
-                        .padding(7.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(if (mappingActive) Color.Black.copy(alpha = 0.82f) else Deck.Accent.copy(alpha = 0.92f))
-                        .clickable { if (mappingActive) c.cancelMapping() else c.openMappingMenu() }
-                        .padding(horizontal = 11.dp, vertical = 6.dp),
-                    color = Color.White,
-                    fontSize = 10.sp,
-                )
+                Row(
+                    Modifier.align(Alignment.TopEnd).padding(7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text(
+                        if (c.externalKeyboardOpen) "TUTUP KBD" else "KBD LUAR",
+                        Modifier.clip(RoundedCornerShape(50))
+                            .background(if (c.externalKeyboardOpen) Deck.Accent else Color.Black.copy(alpha = 0.76f))
+                            .clickable { c.setExternalKeyboardOpen(!c.externalKeyboardOpen) }
+                            .padding(horizontal = 9.dp, vertical = 6.dp),
+                        color = Color.White,
+                        fontSize = 9.sp,
+                    )
+                    Text(
+                        if (mappingActive) "BATAL MAP" else "MAP",
+                        Modifier.clip(RoundedCornerShape(50))
+                            .background(if (mappingActive) Color.Black.copy(alpha = 0.82f) else Deck.Accent.copy(alpha = 0.92f))
+                            .clickable { if (mappingActive) c.cancelMapping() else c.openMappingMenu() }
+                            .padding(horizontal = 11.dp, vertical = 6.dp),
+                        color = Color.White,
+                        fontSize = 10.sp,
+                    )
+                }
             }
         }
         Text(
@@ -214,4 +302,91 @@ private fun VirtualSurface(c: DeckController, modifier: Modifier) {
             }
         },
     )
+}
+
+
+@Composable
+private fun ControlLayoutBar(c: DeckController, modifier: Modifier) {
+    Row(
+        modifier.clip(RoundedCornerShape(14.dp))
+            .background(Color.Black.copy(alpha = 0.86f))
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("SERET KONTROL", color = Color.White, fontSize = 8.sp)
+        Text("RESET", Modifier.clickable { c.resetControlLayout() }.padding(4.dp), color = Color.White, fontSize = 9.sp)
+        Text("BATAL", Modifier.clickable { c.cancelControlLayoutEdit() }.padding(4.dp), color = Color.White, fontSize = 9.sp)
+        Text("SIMPAN", Modifier.clickable { c.saveControlLayout() }.padding(4.dp), color = Deck.Accent, fontSize = 9.sp)
+    }
+}
+
+@Composable
+private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
+    var value by remember { mutableStateOf(TextFieldValue()) }
+    var sentText by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
+    DisposableEffect(Unit) {
+        onDispose { keyboard?.hide() }
+    }
+
+    Row(
+        modifier.clip(RoundedCornerShape(14.dp))
+            .background(Color.Black.copy(alpha = 0.90f))
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = { next ->
+                value = next
+                if (next.composition == null) {
+                    forwardTextDelta(sentText, next.text, c)
+                    sentText = next.text
+                }
+            },
+            modifier = Modifier.weight(1f).heightIn(min = 34.dp).focusRequester(focusRequester),
+            textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+            cursorBrush = SolidColor(Color.White),
+            keyboardOptions = KeyboardOptions.Default,
+            maxLines = 2,
+            decorationBox = { innerTextField ->
+                Box {
+                    if (value.text.isEmpty()) Text("Ketik ke aplikasi di layar virtual…", color = Color.White.copy(alpha = 0.58f), fontSize = 12.sp)
+                    innerTextField()
+                }
+            },
+        )
+        Text(
+            "TUTUP",
+            Modifier.clickable {
+                keyboard?.hide()
+                c.setExternalKeyboardOpen(false)
+            }.padding(5.dp),
+            color = Deck.Accent,
+            fontSize = 10.sp,
+        )
+    }
+}
+
+private fun forwardTextDelta(previous: String, next: String, c: DeckController) {
+    var prefix = 0
+    while (prefix < previous.length && prefix < next.length && previous[prefix] == next[prefix]) prefix++
+    var previousEnd = previous.length
+    var nextEnd = next.length
+    while (previousEnd > prefix && nextEnd > prefix && previous[previousEnd - 1] == next[nextEnd - 1]) {
+        previousEnd--
+        nextEnd--
+    }
+    val removed = previousEnd - prefix
+    if (removed > 0) c.sendBackspace(removed)
+    val inserted = next.substring(prefix, nextEnd)
+    if (inserted.isNotEmpty()) c.sendText(inserted)
 }

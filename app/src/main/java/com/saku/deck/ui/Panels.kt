@@ -251,7 +251,8 @@ fun MappingDialog(c: DeckController) {
                 Modifier.fillMaxWidth().heightIn(max = 430.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Info("Pilih kontrol, lalu ketuk lokasi tombolnya pada layar game. Posisi disimpan di HP ini.")
+                Info("Pilih kontrol, lalu ketuk lokasi tombolnya pada layar game. Untuk skill, tahan tombol lalu seret untuk membidik dan lepaskan untuk cast.")
+                Info("Keyboard internal mengikuti dukungan ROM. Jika tidak muncul di display virtual, gunakan KBD LUAR untuk mengetik dari layar utama.")
                 c.touchMappings.forEach { target ->
                     Row(
                         Modifier.fillMaxWidth()
@@ -274,6 +275,9 @@ fun MappingDialog(c: DeckController) {
                         }
                         Text("Atur ›", color = Deck.Accent, fontSize = 11.sp)
                     }
+                }
+                OutlinedButton(onClick = { c.beginControlLayoutEdit() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Atur posisi A/B/X/Y + analog kanan")
                 }
                 OutlinedButton(onClick = { c.resetMobileLegendsMapping() }, modifier = Modifier.fillMaxWidth()) {
                     Text("Pulihkan preset ML")
