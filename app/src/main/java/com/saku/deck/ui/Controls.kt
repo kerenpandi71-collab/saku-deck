@@ -190,6 +190,40 @@ fun SkillWheelButton(
     }
 }
 
+/** Compact action button with a drag mode for the control-layout editor. */
+@Composable
+fun LayoutRoundButton(
+    label: String,
+    color: Color,
+    diameter: Dp,
+    modifier: Modifier = Modifier,
+    layoutEditing: Boolean,
+    onPress: (Boolean) -> Unit,
+    onPositionDrag: (Float, Float) -> Unit,
+) {
+    val (pressed, press) = rememberPress(onPress)
+    val move by rememberUpdatedState(onPositionDrag)
+    val drag = Modifier.pointerInput(layoutEditing) {
+        if (layoutEditing) {
+            detectDragGestures { change, amount ->
+                change.consume()
+                move(amount.x / size.width.coerceAtLeast(1), amount.y / size.height.coerceAtLeast(1))
+            }
+        }
+    }
+    Box(
+        modifier.size(diameter)
+            .shadow(if (pressed) 1.dp else 4.dp, CircleShape)
+            .clip(CircleShape)
+            .background(if (pressed) color.pressedTone() else color)
+            .then(if (layoutEditing) drag else press),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = (diameter.value * 0.30f).sp)
+        if (layoutEditing) Text("DRAG", Modifier.align(Alignment.BottomCenter), color = Color.White.copy(alpha = 0.82f), fontSize = 6.sp)
+    }
+}
+
 @Composable
 fun ShoulderButton(label: String, scale: Float, onPress: (Boolean) -> Unit) {
     val (pressed, press) = rememberPress(onPress)
