@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="saku_body">#E9E4DC</color>
+    <color name="saku_accent">#F26B3A</color>
+
+    <style name="Theme.SakuDeck" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/saku_body</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>
