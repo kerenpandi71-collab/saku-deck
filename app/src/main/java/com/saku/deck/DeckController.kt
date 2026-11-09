@@ -316,12 +316,12 @@ class DeckController(private val app: Application) {
             if (it.id == id) it.copy(x = x.coerceIn(0.02f, 0.98f), y = y.coerceIn(0.02f, 0.98f)) else it
         }
         touchMappings = updated
+        val saved = updated.first { it.id == id }
         val prefs = app.getSharedPreferences(MAPPING_PREFS, Context.MODE_PRIVATE).edit()
-        prefs.putFloat("${id}_x", targetX(updated, id))
-        prefs.putFloat("${id}_y", targetY(updated, id))
+        prefs.putFloat("${id}_x", saved.x)
+        prefs.putFloat("${id}_y", saved.y)
         prefs.apply()
         mappingTargetId = null
-        val saved = updated.first { it.id == id }
         message = "${saved.label} tersimpan di ${kotlin.math.round(saved.x * 100).toInt()}%, ${kotlin.math.round(saved.y * 100).toInt()}%."
     }
 
