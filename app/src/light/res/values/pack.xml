@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">iOS Liquid Glass Light</string>
+    <string name="pack_title">Liquid Glass</string>
+    <string name="pack_short_name">Liquid Glass Light</string>
+    <string name="pack_description">Warna terang yang lembut, sorotan kaca, dan simbol aplikasi yang bersih. Dibuat sebagai icon pack Android bergaya iOS.</string>
+    <color name="pack_background">#F2F5FB</color>
+    <color name="pack_surface">#E5EAF2</color>
+    <color name="pack_tile">#E9EDF5</color>
+    <color name="pack_stroke">#C9D2E0</color>
+    <color name="pack_text_primary">#172131</color>
+    <color name="pack_text_secondary">#59677A</color>
+    <color name="pack_accent">#386FDE</color>
+    <bool name="pack_light_status_bar">true</bool>
+</resources>

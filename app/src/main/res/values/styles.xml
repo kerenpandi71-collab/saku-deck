@@ -1,0 +1,11 @@
+<resources>
+    <style name="PackTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">@color/pack_accent</item>
+        <item name="android:statusBarColor">@color/pack_background</item>
+        <item name="android:navigationBarColor">@color/pack_background</item>
+        <item name="android:windowLightStatusBar">@bool/pack_light_status_bar</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@color/pack_background</item>
+    </style>
+</resources>

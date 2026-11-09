@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="iconback">
+        <item>@drawable/iconback_one</item>
+        <item>@drawable/iconback_two</item>
+        <item>@drawable/iconback_three</item>
+    </array>
+    <array name="iconmask">
+        <item>@drawable/iconmask</item>
+    </array>
+    <array name="iconupon">
+        <item>@drawable/iconupon</item>
+    </array>
+</resources>
