@@ -14,7 +14,7 @@ CANVAS = SIZE * SCALE
 ICONS = [
     ("phone", "Phone", "phone handset", [("com.google.android.dialer", ".extensions.GoogleDialtactsActivity"), ("com.android.dialer", ".DialtactsActivity")]),
     ("messages", "Messages", "message bubble", [("com.google.android.apps.messaging", ".ui.ConversationListActivity"), ("com.samsung.android.messaging", ".ui.view.conversation.ConversationComposer")]),
-    ("mail", "Mail", "envelope", [("com.google.android.gm", ".ConversationListActivityGmail"), ("com.android.email", ".activity.Welcome")]),
+    ("mail", "Mail", "envelope", [("com.android.email", ".activity.Welcome")]),
     ("browser", "Browser", "compass", [("com.android.chrome", "com.google.android.apps.chrome.Main"), ("org.mozilla.firefox", ".App"), ("com.brave.browser", "com.google.android.apps.chrome.Main")]),
     ("camera", "Camera", "camera", [("com.google.android.GoogleCamera", "com.android.camera.CameraLauncher"), ("com.sec.android.app.camera", ".Camera")]),
     ("photos", "Photos", "flower", [("com.google.android.apps.photos", ".home.HomeActivity")]),
@@ -25,10 +25,10 @@ ICONS = [
     ("notes", "Notes", "notepad", [("com.google.android.keep", ".activities.BrowseActivity"), ("com.samsung.android.app.notes", ".기본")]),
     ("reminders", "Reminders", "checklist", [("com.google.android.apps.tasks", ".ui.TaskListActivity"), ("com.samsung.android.app.reminder", ".ui.ReminderMainActivity")]),
     ("files", "Files", "folder", [("com.google.android.documentsui", "com.android.documentsui.files.FilesActivity"), ("com.google.android.apps.nbu.files", ".home.HomeActivity"), ("com.sec.android.app.myfiles", ".external.ui.MainActivity")]),
-    ("music", "Music", "music note", [("com.google.android.apps.youtube.music", ".activities.MusicActivity")]),
+    ("music", "Music", "music note", [("com.sec.android.app.music", ".common.activity.MusicMainActivity")]),
     ("podcasts", "Podcasts", "podcast", [("com.google.android.apps.podcasts", ".home.HomeActivity")]),
     ("tv", "TV", "television", [("com.google.android.videos", ".tv.TvActivity"), ("com.google.android.youtube.tv", ".MainActivity")]),
-    ("app_store", "App Store", "stylized A", [("com.android.vending", "com.google.android.finsky.activities.MainActivity")]),
+    ("app_store", "Store", "storefront", []),
     ("settings", "Settings", "gear", [("com.android.settings", ".Settings"), ("com.android.settings", ".Settings$DevelopmentSettingsDashboardActivity")]),
     ("wallet", "Wallet", "wallet card", [("com.google.android.apps.walletnfcrel", ".ui.main.MainActivity"), ("com.samsung.android.spay", ".ui.SpayMainActivity")]),
     ("health", "Health", "heart", [("com.google.android.apps.fitness", ".GFitMainActivity"), ("com.sec.android.app.shealth", ".SHealthMainActivity")]),
@@ -36,8 +36,8 @@ ICONS = [
     ("contacts", "Contacts", "person", [("com.google.android.contacts", ".activities.PeopleActivity"), ("com.samsung.android.app.contacts", ".activities.ContactUsActivity")]),
     ("calculator", "Calculator", "calculator", [("com.google.android.calculator", "com.android.calculator2.Calculator"), ("com.sec.android.app.popupcalculator", ".Calculator")]),
     ("translate", "Translate", "translation bubbles", [("com.google.android.apps.translate", ".TranslateActivity")]),
-    ("shortcuts", "Shortcuts", "shortcut arrows", [("com.google.android.apps.nbu.files", ".home.HomeActivity")]),
-    ("facetime", "Video Call", "video camera", [("com.google.android.apps.tachyon", ".MainActivity"), ("com.google.android.apps.meetings", ".MainActivity")]),
+    ("shortcuts", "Shortcuts", "shortcut arrows", []),
+    ("video_call", "Video Call", "video camera", [("com.google.android.apps.tachyon", ".MainActivity"), ("com.google.android.apps.meetings", ".MainActivity")]),
     ("drive", "Drive", "triangle", [("com.google.android.apps.docs", ".app.NewMainProxyActivity")]),
     ("gmail", "Gmail", "letter M", [("com.google.android.gm", ".ConversationListActivityGmail")]),
     ("youtube", "YouTube", "play button", [("com.google.android.youtube", ".app.honeycomb.Shell$HomeActivity")]),
@@ -144,6 +144,13 @@ def draw_symbol(kind, painter, color, accent):
         p.ellipse((242,235,270,263),fill=a); p.arc((209,203,303,297),210,330,white,13); p.arc((178,172,334,328),210,330,white,13); p.arc((145,140,367,362),210,330,white,13); p.line([(256,269),(256,344)],white,15)
     elif kind=="television":
         p.rect((135,190,377,347),None,white,15,26); p.line([(220,169),(256,138),(292,169)],a,13); p.poly([(235,230),(235,308),(304,269)],white)
+    elif kind=="storefront":
+        p.poly([(139,223),(167,157),(345,157),(373,223)],None,white,16)
+        p.line([(139,223),(373,223)],accent,14)
+        p.rect((157,224,355,361),None,white,14,12)
+        p.rect((226,277,285,361),accent,None,0,8)
+        p.rect((177,258,210,291),white,None,0,6)
+        p.rect((301,258,334,291),white,None,0,6)
     elif kind=="stylized A":
         p.line([(164,346),(250,160),(348,346)],white,22); p.line([(198,289),(318,289)],a,17); p.line([(225,230),(289,230)],white,14)
     elif kind=="gear":

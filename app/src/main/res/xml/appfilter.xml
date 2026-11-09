@@ -4,7 +4,6 @@
     <item component="ComponentInfo{com.android.dialer/com.android.dialer.DialtactsActivity}" drawable="phone" />
     <item component="ComponentInfo{com.google.android.apps.messaging/com.google.android.apps.messaging.ui.ConversationListActivity}" drawable="messages" />
     <item component="ComponentInfo{com.samsung.android.messaging/com.samsung.android.messaging.ui.view.conversation.ConversationComposer}" drawable="messages" />
-    <item component="ComponentInfo{com.google.android.gm/com.google.android.gm.ConversationListActivityGmail}" drawable="mail" />
     <item component="ComponentInfo{com.android.email/com.android.email.activity.Welcome}" drawable="mail" />
     <item component="ComponentInfo{com.android.chrome/com.google.android.apps.chrome.Main}" drawable="browser" />
     <item component="ComponentInfo{org.mozilla.firefox/org.mozilla.firefox.App}" drawable="browser" />
@@ -26,11 +25,10 @@
     <item component="ComponentInfo{com.google.android.documentsui/com.android.documentsui.files.FilesActivity}" drawable="files" />
     <item component="ComponentInfo{com.google.android.apps.nbu.files/com.google.android.apps.nbu.files.home.HomeActivity}" drawable="files" />
     <item component="ComponentInfo{com.sec.android.app.myfiles/com.sec.android.app.myfiles.external.ui.MainActivity}" drawable="files" />
-    <item component="ComponentInfo{com.google.android.apps.youtube.music/com.google.android.apps.youtube.music.activities.MusicActivity}" drawable="music" />
+    <item component="ComponentInfo{com.sec.android.app.music/com.sec.android.app.music.common.activity.MusicMainActivity}" drawable="music" />
     <item component="ComponentInfo{com.google.android.apps.podcasts/com.google.android.apps.podcasts.home.HomeActivity}" drawable="podcasts" />
     <item component="ComponentInfo{com.google.android.videos/com.google.android.videos.tv.TvActivity}" drawable="tv" />
     <item component="ComponentInfo{com.google.android.youtube.tv/com.google.android.youtube.tv.MainActivity}" drawable="tv" />
-    <item component="ComponentInfo{com.android.vending/com.google.android.finsky.activities.MainActivity}" drawable="app_store" />
     <item component="ComponentInfo{com.android.settings/com.android.settings.Settings}" drawable="settings" />
     <item component="ComponentInfo{com.android.settings/com.android.settings.Settings$DevelopmentSettingsDashboardActivity}" drawable="settings" />
     <item component="ComponentInfo{com.google.android.apps.walletnfcrel/com.google.android.apps.walletnfcrel.ui.main.MainActivity}" drawable="wallet" />
@@ -44,9 +42,8 @@
     <item component="ComponentInfo{com.google.android.calculator/com.android.calculator2.Calculator}" drawable="calculator" />
     <item component="ComponentInfo{com.sec.android.app.popupcalculator/com.sec.android.app.popupcalculator.Calculator}" drawable="calculator" />
     <item component="ComponentInfo{com.google.android.apps.translate/com.google.android.apps.translate.TranslateActivity}" drawable="translate" />
-    <item component="ComponentInfo{com.google.android.apps.nbu.files/com.google.android.apps.nbu.files.home.HomeActivity}" drawable="shortcuts" />
-    <item component="ComponentInfo{com.google.android.apps.tachyon/com.google.android.apps.tachyon.MainActivity}" drawable="facetime" />
-    <item component="ComponentInfo{com.google.android.apps.meetings/com.google.android.apps.meetings.MainActivity}" drawable="facetime" />
+    <item component="ComponentInfo{com.google.android.apps.tachyon/com.google.android.apps.tachyon.MainActivity}" drawable="video_call" />
+    <item component="ComponentInfo{com.google.android.apps.meetings/com.google.android.apps.meetings.MainActivity}" drawable="video_call" />
     <item component="ComponentInfo{com.google.android.apps.docs/com.google.android.apps.docs.app.NewMainProxyActivity}" drawable="drive" />
     <item component="ComponentInfo{com.google.android.gm/com.google.android.gm.ConversationListActivityGmail}" drawable="gmail" />
     <item component="ComponentInfo{com.google.android.youtube/com.google.android.youtube.app.honeycomb.Shell$HomeActivity}" drawable="youtube" />

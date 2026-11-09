@@ -18,8 +18,10 @@ assert len(names) == len(labels) >= 40
 assert len(names) == len(set(names)), "icon resource names must be unique"
 
 mapping_drawables = {item.attrib["drawable"] for item in appfilter.findall("item")}
+mapping_components = [item.attrib["component"] for item in appfilter.findall("item")]
 assert mapping_drawables <= set(names), "appfilter contains unknown drawable names"
 assert len(appfilter.findall("item")) >= 40, "appfilter mapping catalog is unexpectedly small"
+assert len(mapping_components) == len(set(mapping_components)), "each Android component must map to only one icon"
 
 for flavor in ("light", "dark"):
     drawables = ROOT / f"app/src/{flavor}/res/drawable-nodpi"
