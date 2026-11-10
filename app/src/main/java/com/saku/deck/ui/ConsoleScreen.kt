@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -62,16 +64,32 @@ fun ConsoleScreen(c: DeckController) {
         val side = (maxWidth * 0.22f).coerceIn(150.dp, 260.dp)
         val scale = minOf(maxHeight.value / 360f, side.value / 180f).coerceIn(0.7f, 1.8f)
 
+        if (!c.gamepadHidden) {
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SidePanel(left = true, c = c, scale = scale, modifier = Modifier.width(side).fillMaxHeight())
+                ScreenArea(c, Modifier.weight(1f).fillMaxHeight().padding(horizontal = 4.dp))
+                SidePanel(left = false, c = c, scale = scale, modifier = Modifier.width(side).fillMaxHeight())
+            }
+        } else {
+            ScreenArea(c, Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 8.dp))
+        }
         Row(
-            Modifier
-                .fillMaxSize()
-                .padding(horizontal = 6.dp, vertical = 8.dp),
+            Modifier.align(Alignment.TopCenter).padding(top = 4.dp)
+                .clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.82f))
+                .padding(horizontal = 7.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SidePanel(left = true, c = c, scale = scale, modifier = Modifier.width(side).fillMaxHeight())
-            ScreenArea(c, Modifier.weight(1f).fillMaxHeight().padding(horizontal = 4.dp))
-            SidePanel(left = false, c = c, scale = scale, modifier = Modifier.width(side).fillMaxHeight())
+            Text(if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD",
+                Modifier.clickable { c.toggleGamepadHidden() }.padding(4.dp),
+                color = Color.White, fontSize = 9.sp)
+            Text("ATUR TOMBOL", Modifier.clickable { c.visibilityMenuOpen = true }.padding(4.dp),
+                color = Deck.Accent, fontSize = 9.sp)
         }
+        if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
         if (c.externalKeyboardOpen) {
             ExternalKeyboardBridge(
@@ -113,7 +131,7 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
                     Triple("face_y", KeyEvent.KEYCODE_BUTTON_Y, Deck.ButtonY) to 65.dp,
                     Triple("face_a", KeyEvent.KEYCODE_BUTTON_A, Deck.ButtonA) to 80.dp,
                     Triple("face_b", KeyEvent.KEYCODE_BUTTON_B, Deck.ButtonB) to 65.dp,
-                )
+                ).filterNot { (control, _) -> control.first in c.hiddenControls }
                 faceControls.forEach { (control, buttonSize) ->
                     val (id, keyCode, color) = control
                     val position = c.controlPositions.first { it.id == id }
@@ -142,7 +160,7 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
                     Triple("extra_spell", "SP", KeyEvent.KEYCODE_BUTTON_R2) to Deck.Accent,
                     Triple("extra_regen", "RG", KeyEvent.KEYCODE_BUTTON_L1) to Deck.ButtonY,
                     Triple("extra_recall", "RC", KeyEvent.KEYCODE_BUTTON_SELECT) to Deck.ButtonX,
-                )
+                ).filterNot { (control, _) -> control.first in c.hiddenControls }
                 extraControls.forEach { (control, color) ->
                     val (id, label, keyCode) = control
                     val buttonSize = 50.dp
@@ -185,7 +203,7 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
                 }
                 val stickSize = (86 * scale).dp
                 val stickPosition = c.controlPositions.first { it.id == "right_stick" }
-                AnalogStick(
+                if ("right_stick" !in c.hiddenControls) AnalogStick(
                     diameter = stickSize,
                     modifier = Modifier.offset(
                         x = maxWidth * stickPosition.x - stickSize / 2,
@@ -211,12 +229,15 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (left) {
-                PillButton("SELECT", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_SELECT, it) }
+                Column(verticalArrangement = Arrangement.spacedBy((5 * scale).dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    PillButton("SELECT", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_SELECT, it) }
+                    PillButton("START", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_START, it) }
+                }
                 PillButton("KEMBALI", scale) { c.sendKey(KeyEvent.KEYCODE_BACK, it) }
-                PillButton("HOME", scale) { c.sendKey(KeyEvent.KEYCODE_HOME, it) }
-            } else {
-                PillButton("START", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_START, it) }
-                PillButton("MENU", scale, accent = true) { if (it) c.openPicker() }
+                Column(verticalArrangement = Arrangement.spacedBy((5 * scale).dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    PillButton("HOME", scale) { c.sendKey(KeyEvent.KEYCODE_HOME, it) }
+                    PillButton("MENU", scale, accent = true) { if (it) c.openPicker() }
+                }
             }
         }
     }
