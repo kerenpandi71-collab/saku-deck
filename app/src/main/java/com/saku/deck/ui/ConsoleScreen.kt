@@ -76,18 +76,34 @@ fun ConsoleScreen(c: DeckController) {
         } else {
             ScreenArea(c, Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 8.dp))
         }
-        Row(
-            Modifier.align(Alignment.TopCenter).padding(top = 4.dp)
-                .clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.82f))
-                .padding(horizontal = 7.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            Modifier.align(Alignment.BottomEnd).padding(12.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            Text(if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD",
-                Modifier.clickable { c.toggleGamepadHidden() }.padding(4.dp),
-                color = Color.White, fontSize = 9.sp)
-            Text("ATUR TOMBOL", Modifier.clickable { c.visibilityMenuOpen = true }.padding(4.dp),
-                color = Deck.Accent, fontSize = 9.sp)
+            if (c.assistantMenuOpen) {
+                listOf(
+                    (if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() },
+                    "MAPPING ML" to { c.openMappingMenu() },
+                    "VISIBILITAS" to { c.visibilityMenuOpen = true },
+                    "ATUR POSISI" to { c.beginControlLayoutEdit() },
+                    "KBD LUAR" to { c.updateExternalKeyboardOpen(!c.externalKeyboardOpen) },
+                ).forEach { (label, action) ->
+                    Text(label, Modifier.clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.88f))
+                        .clickable { action(); c.assistantMenuOpen = false }
+                        .padding(horizontal = 13.dp, vertical = 9.dp),
+                        color = Color.White, fontSize = 10.sp)
+                }
+            }
+            Box(
+                Modifier.size(48.dp).shadow(6.dp, CircleShape).clip(CircleShape)
+                    .background(Deck.Accent)
+                    .clickable { c.assistantMenuOpen = !c.assistantMenuOpen },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(if (c.assistantMenuOpen) "×" else "●", color = Color.White, fontSize = 22.sp)
+            }
         }
         if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
@@ -110,17 +126,17 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy((8 * scale).dp)) {
             if (left) {
-                ShoulderButton("L2", scale) { c.setTrigger(true, it) }
-                ShoulderButton("L1", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_L1, it) }
+                if ("l2" !in c.hiddenControls) ShoulderButton("L2", scale) { c.setTrigger(true, it) }
+                if ("l1" !in c.hiddenControls) ShoulderButton("L1", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_L1, it) }
             } else {
-                ShoulderButton("R1", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_R1, it) }
-                ShoulderButton("R2", scale) { c.setTrigger(false, it) }
+                if ("r1" !in c.hiddenControls) ShoulderButton("R1", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_R1, it) }
+                if ("r2" !in c.hiddenControls) ShoulderButton("R2", scale) { c.setTrigger(false, it) }
             }
         }
 
         if (left) {
-            DPad((112 * scale).dp) { code, down -> c.sendKey(code, down) }
-            AnalogStick(
+            if ("dpad" !in c.hiddenControls) DPad((112 * scale).dp) { code, down -> c.sendKey(code, down) }
+            if ("left_stick" !in c.hiddenControls) AnalogStick(
                 diameter = (92 * scale).dp,
                 onMove = { x, y, active -> c.sendStick(false, x, y, active) },
             )
@@ -230,13 +246,13 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
         ) {
             if (left) {
                 Column(verticalArrangement = Arrangement.spacedBy((5 * scale).dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    PillButton("SELECT", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_SELECT, it) }
-                    PillButton("START", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_START, it) }
+                    if ("select" !in c.hiddenControls) PillButton("SELECT", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_SELECT, it) }
+                    if ("start" !in c.hiddenControls) PillButton("START", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_START, it) }
                 }
-                PillButton("KEMBALI", scale) { c.sendKey(KeyEvent.KEYCODE_BACK, it) }
+                if ("back" !in c.hiddenControls) PillButton("KEMBALI", scale) { c.sendKey(KeyEvent.KEYCODE_BACK, it) }
                 Column(verticalArrangement = Arrangement.spacedBy((5 * scale).dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    PillButton("HOME", scale) { c.sendKey(KeyEvent.KEYCODE_HOME, it) }
-                    PillButton("MENU", scale, accent = true) { if (it) c.openPicker() }
+                    if ("home" !in c.hiddenControls) PillButton("HOME", scale) { c.sendKey(KeyEvent.KEYCODE_HOME, it) }
+                    if ("menu" !in c.hiddenControls) PillButton("MENU", scale, accent = true) { if (it) c.openPicker() }
                 }
             }
         }
@@ -398,13 +414,24 @@ private fun ControlVisibilityDialog(c: DeckController) {
         "extra_regen" to "Regen",
         "extra_recall" to "Recall",
         "right_stick" to "Analog kanan",
+        "left_stick" to "Analog kiri",
+        "dpad" to "D-Pad (4 arah)",
+        "l1" to "L1",
+        "l2" to "L2",
+        "r1" to "R1",
+        "r2" to "R2",
+        "select" to "Select",
+        "start" to "Start",
+        "home" to "Home",
+        "menu" to "Menu",
+        "back" to "Kembali",
     )
     AlertDialog(
         onDismissRequest = { c.visibilityMenuOpen = false },
         title = { Text("Atur visibilitas tombol") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Matikan tombol yang tidak digunakan. Pengaturan tersimpan otomatis.",
+                Text("Pilih semua kontrol yang ingin disembunyikan. Pengaturan tersimpan otomatis.",
                     fontSize = 11.sp, color = Deck.Ink.copy(alpha = 0.72f))
                 controls.forEach { (id, label) ->
                     val hidden = id in c.hiddenControls
