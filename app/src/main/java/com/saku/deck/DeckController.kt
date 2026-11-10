@@ -62,6 +62,11 @@ class DeckController(private val app: Application) {
     var controlLayoutEditing by mutableStateOf(false)
         private set
     var externalKeyboardOpen by mutableStateOf(false)
+    var gamepadHidden by mutableStateOf(loadGamepadHidden())
+        private set
+    var hiddenControls by mutableStateOf(loadHiddenControls())
+        private set
+    var visibilityMenuOpen by mutableStateOf(false)
 
     @Volatile
     private var service: IDeckService? = null
@@ -405,6 +410,26 @@ class DeckController(private val app: Application) {
         externalKeyboardOpen = open
     }
 
+    fun toggleGamepadHidden() {
+        gamepadHidden = !gamepadHidden
+        app.getSharedPreferences(CONTROL_VISIBILITY_PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("hide_all", gamepadHidden).apply()
+    }
+
+    fun setControlHidden(id: String, hidden: Boolean) {
+        hiddenControls = if (hidden) hiddenControls + id else hiddenControls - id
+        app.getSharedPreferences(CONTROL_VISIBILITY_PREFS, Context.MODE_PRIVATE)
+            .edit().putStringSet("hidden_controls", hiddenControls).apply()
+    }
+
+    private fun loadGamepadHidden(): Boolean =
+        app.getSharedPreferences(CONTROL_VISIBILITY_PREFS, Context.MODE_PRIVATE)
+            .getBoolean("hide_all", false)
+
+    private fun loadHiddenControls(): Set<String> =
+        app.getSharedPreferences(CONTROL_VISIBILITY_PREFS, Context.MODE_PRIVATE)
+            .getStringSet("hidden_controls", emptySet())?.toSet() ?: emptySet()
+
     private fun loadControlPositions(): List<ControlPosition> {
         val prefs = app.getSharedPreferences(CONTROL_LAYOUT_PREFS, Context.MODE_PRIVATE)
         return DEFAULT_CONTROL_POSITIONS.map {
@@ -711,6 +736,7 @@ class DeckController(private val app: Application) {
         private const val REQUEST_CODE = 7
         private const val MAPPING_PREFS = "mobile_legends_touch_mapping"
         private const val CONTROL_LAYOUT_PREFS = "mobile_legends_control_layout"
+        private const val CONTROL_VISIBILITY_PREFS = "control_visibility"
         // Virtual display density relative to the phone, so apps fit the smaller center screen.
         private const val DPI_SCALE = 0.75f
         private val DEFAULT_TOUCH_MAPPINGS = listOf(
