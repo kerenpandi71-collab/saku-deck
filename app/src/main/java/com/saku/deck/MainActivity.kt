@@ -39,7 +39,13 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemBars()
-        controller.refresh()
+        controller.onHostResumed()
+    }
+
+    override fun onStop() {
+        // The deck is no longer visible: release its virtual display and Shizuku service.
+        controller.shutdown()
+        super.onStop()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
