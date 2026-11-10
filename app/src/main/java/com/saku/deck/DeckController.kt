@@ -71,6 +71,19 @@ class DeckController(private val app: Application) {
         private set
     var visibilityMenuOpen by mutableStateOf(false)
     var assistantMenuOpen by mutableStateOf(false)
+    var titanPortraitMode by mutableStateOf(loadTitanPortraitMode())
+
+    fun toggleTitanPortraitMode() {
+        titanPortraitMode = !titanPortraitMode
+        app.getSharedPreferences("saku_deck_display_mode", Context.MODE_PRIVATE)
+            .edit().putBoolean("titan_portrait", titanPortraitMode).apply()
+        assistantMenuOpen = false
+        message = if (titanPortraitMode) "Mode Unihertz Titan aktif." else "Mode Landscape aktif."
+    }
+
+    private fun loadTitanPortraitMode(): Boolean =
+        app.getSharedPreferences("saku_deck_display_mode", Context.MODE_PRIVATE)
+            .getBoolean("titan_portrait", false)
 
     @Volatile
     private var service: IDeckService? = null
