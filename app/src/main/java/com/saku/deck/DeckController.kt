@@ -18,6 +18,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Surface
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -72,6 +73,15 @@ class DeckController(private val app: Application) {
     var visibilityMenuOpen by mutableStateOf(false)
     var assistantMenuOpen by mutableStateOf(false)
     var titanPortraitMode by mutableStateOf(loadTitanPortraitMode())
+
+    // Cursor position for the Titan trackpad, as a 0..1 fraction of the virtual
+    // display size. Stays negative until the trackpad is first used. The host UI
+    // draws its own pointer sprite at this position: Android only renders the
+    // native mouse cursor for real mouse devices, never for injected events.
+    var trackpadCursorX by mutableFloatStateOf(-1f)
+        private set
+    var trackpadCursorY by mutableFloatStateOf(-1f)
+        private set
 
     fun toggleTitanPortraitMode() {
         titanPortraitMode = !titanPortraitMode
@@ -289,6 +299,12 @@ class DeckController(private val app: Application) {
                         displayId = id
                         displayW = w
                         displayH = h
+                        if (existing < 0) {
+                            // A fresh display starts without a cursor position.
+                            mouseCursorInitialized = false
+                            trackpadCursorX = -1f
+                            trackpadCursorY = -1f
+                        }
                     } else {
                         message = "Gagal membuat layar virtual: ${b.getString("error")}"
                     }
@@ -326,6 +342,9 @@ class DeckController(private val app: Application) {
         pickerOpen = true
         busy = false
         keyDownTimes.clear()
+        mouseCursorInitialized = false
+        trackpadCursorX = -1f
+        trackpadCursorY = -1f
 
         // First wait behind any display create/resize task, then queue teardown
         // behind all input events. This prevents release racing display creation.
@@ -523,12 +542,13 @@ class DeckController(private val app: Application) {
     private var mouseCursorX = 0f
     private var mouseCursorY = 0f
     private var mouseCursorInitialized = false
-    private var mouseButtonDown = false
     private var mouseDownTime = 0L
+    private var lastHoverSentAt = 0L
 
     /**
-     * Dextop-style relative trackpad: movement is emitted as SOURCE_MOUSE hover
-     * events to the virtual display, letting Android render its native pointer.
+     * Relative trackpad: movement updates an internal cursor position that the
+     * host renders as an overlay sprite inside the virtual screen. Mouse hover
+     * events are still forwarded so mouse-aware apps react to the pointer.
      */
     fun moveTrackpadCursor(deltaX: Float, deltaY: Float, padWidth: Int, padHeight: Int) {
         val svc = service ?: return
@@ -544,24 +564,27 @@ class DeckController(private val app: Application) {
             .coerceIn(1f, (displayW - 2).coerceAtLeast(1).toFloat())
         mouseCursorY = (mouseCursorY + deltaY * displayH / padHeight * sensitivity)
             .coerceIn(1f, (displayH - 2).coerceAtLeast(1).toFloat())
-        dispatchMouseEvent(svc, id, MotionEvent.ACTION_HOVER_MOVE, 0, SystemClock.uptimeMillis())
+        trackpadCursorX = mouseCursorX / displayW
+        trackpadCursorY = mouseCursorY / displayH
+        val now = SystemClock.uptimeMillis()
+        // Mouse-aware apps still receive hover moves, throttled to roughly one
+        // event per frame so the Binder input queue can never outpace the game.
+        if (now - lastHoverSentAt >= 16L) {
+            lastHoverSentAt = now
+            dispatchMouseEvent(svc, id, MotionEvent.ACTION_HOVER_MOVE, 0, now)
+        }
     }
 
     fun tapTrackpadCursor() {
-        val svc = service ?: return
-        val id = displayId
-        if (!mouseCursorInitialized || id < 0) return
-        val now = SystemClock.uptimeMillis()
-        mouseDownTime = now
-        mouseButtonDown = true
-        dispatchMouseEvent(svc, id, MotionEvent.ACTION_DOWN, MotionEvent.BUTTON_PRIMARY, now)
+        if (!mouseCursorInitialized || displayId < 0) return
+        // Tap as a real touchscreen contact instead of a mouse click: every app
+        // accepts touch, while injected mouse buttons are ignored by many apps
+        // and Android never draws its cursor sprite for injected mouse events.
+        val x = mouseCursorX
+        val y = mouseCursorY
+        setMappedTouch(TRACKPAD_TOUCH_KEY, x, y, true)
         main.postDelayed({
-            val current = service
-            val currentId = displayId
-            if (mouseButtonDown && current != null && currentId == id) {
-                dispatchMouseEvent(current, id, MotionEvent.ACTION_UP, 0, SystemClock.uptimeMillis())
-            }
-            mouseButtonDown = false
+            setMappedTouch(TRACKPAD_TOUCH_KEY, x, y, false)
         }, 65L)
     }
 
@@ -915,6 +938,7 @@ class DeckController(private val app: Application) {
     companion object {
         const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         private const val REQUEST_CODE = 7
+        private const val TRACKPAD_TOUCH_KEY = "trackpad_cursor"
         private const val MAPPING_PREFS = "mobile_legends_touch_mapping"
         private const val CONTROL_LAYOUT_PREFS = "mobile_legends_control_layout"
         private const val CONTROL_SIZE_PREFS = "face_control_sizes"

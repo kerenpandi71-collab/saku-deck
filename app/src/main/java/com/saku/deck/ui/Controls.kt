@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -90,7 +89,7 @@ fun RoundButton(label: String, color: Color, diameter: Dp, onPress: (Boolean) ->
     Box(
         Modifier
             .size(diameter)
-            .shadow(if (pressed) 1.dp else 4.dp, CircleShape)
+            .border(2.dp, Color.Black.copy(alpha = 0.35f), CircleShape)
             .clip(CircleShape)
             .background(if (pressed) color.pressedTone() else color)
             .then(press),
@@ -173,7 +172,7 @@ fun SkillWheelButton(
     Box(
         modifier
             .size(diameter)
-            .shadow(if (active) 1.dp else 4.dp, CircleShape)
+            .border(2.dp, Color.Black.copy(alpha = 0.35f), CircleShape)
             .clip(CircleShape)
             .background(if (active) color.pressedTone() else color)
             .then(gesture),
@@ -213,7 +212,7 @@ fun LayoutRoundButton(
     }
     Box(
         modifier.size(diameter)
-            .shadow(if (pressed) 1.dp else 4.dp, CircleShape)
+            .border(2.dp, Color.Black.copy(alpha = 0.35f), CircleShape)
             .clip(CircleShape)
             .background(if (pressed) color.pressedTone() else color)
             .then(if (layoutEditing) drag else press),
@@ -257,7 +256,7 @@ fun PillButton(label: String, scale: Float, accent: Boolean = false, onPress: (B
         Box(
             Modifier
                 .size(width = (36 * scale).dp, height = (14 * scale).dp)
-                .shadow(if (pressed) 0.dp else 2.dp, RoundedCornerShape(50))
+                .border(1.dp, Color.Black.copy(alpha = 0.30f), RoundedCornerShape(50))
                 .clip(RoundedCornerShape(50))
                 .background(if (pressed) color.pressedTone() else color)
                 .then(press)

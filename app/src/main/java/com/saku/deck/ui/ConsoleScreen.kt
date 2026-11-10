@@ -4,7 +4,9 @@ import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -46,7 +48,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -451,9 +455,12 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
     val bezelShape = RoundedCornerShape(20.dp)
     Box(
         modifier
-            .shadow(8.dp, bezelShape)
             .clip(bezelShape)
             .background(Deck.Bezel)
+            // Flat border instead of an elevation shadow: shadow layers force the
+            // whole window to alpha-composite with the game surface every frame,
+            // which costs real FPS on low-end GPUs while the pad overlay is shown.
+            .border(1.dp, Color.Black.copy(alpha = 0.35f), bezelShape)
             .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 16.dp)
     ) {
         Box(
@@ -463,6 +470,7 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
                 .background(Deck.ScreenOff)
         ) {
             VirtualSurface(c, Modifier.fillMaxSize())
+            TrackpadCursor(c)
             if (c.mappingTargetId != null) MappingMarkers(c)
             when {
                 c.shizukuState != ShizukuState.READY -> ShizukuPanel(c)
@@ -545,6 +553,43 @@ private fun VirtualSurface(c: DeckController, modifier: Modifier) {
             }
         },
     )
+}
+
+/**
+ * Cursor sprite for the Titan trackpad, drawn over the virtual screen.
+ * Android only renders its native mouse pointer for physical mouse devices,
+ * never for injected events, so the host draws this pointer itself.
+ */
+@Composable
+private fun TrackpadCursor(c: DeckController) {
+    val fx = c.trackpadCursorX
+    val fy = c.trackpadCursorY
+    if (fx < 0f || fy < 0f) return
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        Canvas(
+            Modifier
+                .offset(
+                    x = maxWidth * fx,
+                    y = maxHeight * fy,
+                )
+                .size(20.dp)
+        ) {
+            val w = size.width
+            val h = size.height
+            val path = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(0.03f * w, 0.75f * h)
+                lineTo(0.28f * w, 0.56f * h)
+                lineTo(0.46f * w, 0.95f * h)
+                lineTo(0.62f * w, 0.87f * h)
+                lineTo(0.45f * w, 0.50f * h)
+                lineTo(0.72f * w, 0.44f * h)
+                close()
+            }
+            drawPath(path, Color.White)
+            drawPath(path, Color.Black.copy(alpha = 0.55f), style = Stroke(width = 2f))
+        }
+    }
 }
 
 

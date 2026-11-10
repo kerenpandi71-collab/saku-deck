@@ -63,6 +63,30 @@ class DeckUserService : IDeckService.Stub() {
         }
     }
 
+    private val windowManager: Any by lazy {
+        asInterface(WINDOW_MANAGER, systemService("window"))
+    }
+    private val setDisplayImePolicyMethod: Method? by lazy {
+        runCatching {
+            Class.forName("android.view.IWindowManager")
+                .getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        }.getOrNull()
+    }
+
+    /**
+     * On Android 11-13 the VirtualDisplayConfig builder has no setImePolicy(),
+     * so the soft keyboard still opens inside the virtual display. The reliable
+     * fix on those versions is IWindowManager.setDisplayImePolicy(displayId,
+     * DISPLAY_IME_POLICY_HIDE = 2), available since Android 12; the display must
+     * be trusted, which the first flag set already provides. The host activity
+     * keeps owning text input through its IME bridge.
+     */
+    private fun applyImeHidePolicy(displayId: Int) {
+        val method = setDisplayImePolicyMethod ?: return
+        runCatching { method.invoke(windowManager, displayId, 2) }
+            .onFailure { Log.w("SakuDeck", "setDisplayImePolicy(HIDE) gagal", unwrap(it)) }
+    }
+
     private fun unwrap(t: Throwable): Throwable =
         (t as? InvocationTargetException)?.targetException ?: t
 
@@ -110,6 +134,7 @@ class DeckUserService : IDeckService.Stub() {
                         if (id >= 0) {
                             callback = cb
                             displayId = id
+                            applyImeHidePolicy(id)
                             out.putInt("displayId", id)
                             out.putInt("flags", flags)
                             return out
@@ -253,6 +278,7 @@ class DeckUserService : IDeckService.Stub() {
         private const val DISPLAY_MANAGER = "android.hardware.display.IDisplayManager"
         private const val DISPLAY_CALLBACK = "android.hardware.display.IVirtualDisplayCallback"
         private const val INPUT_MANAGER = "android.hardware.input.IInputManager"
+        private const val WINDOW_MANAGER = "android.view.IWindowManager"
 
         // DisplayManager virtual display flags (some are hidden in the SDK).
         private const val PUBLIC = 1
