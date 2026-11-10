@@ -56,6 +56,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import com.saku.deck.DeckController
 import com.saku.deck.ShizukuState
 
@@ -178,14 +181,22 @@ private fun TitanPortraitShell(c: DeckController, modifier: Modifier) {
 private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
     AndroidView(
         modifier = modifier
-            .clip(RoundedCornerShape(9.dp)),
+            .clip(RoundedCornerShape(9.dp))
+            .pointerInput(c) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    c.moveTrackpadCursor(dragAmount.x / 320f, dragAmount.y / 180f)
+                }
+            }
+            .pointerInput(c) {
+                detectTapGestures { c.tapTrackpadCursor() }
+            },
         factory = { context ->
             View(context).apply {
                 setBackgroundColor(android.graphics.Color.rgb(48, 53, 59))
                 isFocusable = false
-                setOnTouchListener { view, event ->
-                    c.forwardTouch(event, view.width.coerceAtLeast(1), view.height.coerceAtLeast(1))
-                }
+                isFocusableInTouchMode = false
+            }
             }
         },
         update = { view ->
@@ -454,6 +465,20 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
                 .background(Deck.ScreenOff)
         ) {
             VirtualSurface(c, Modifier.fillMaxSize())
+            if (c.trackpadCursorVisible && c.displayId >= 0) {
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    Text(
+                        "➤",
+                        Modifier.offset(
+                            x = maxWidth * c.trackpadCursorX,
+                            y = maxHeight * c.trackpadCursorY,
+                        ),
+                        color = Color.White,
+                        fontSize = 24.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    )
+                }
+            }
             if (c.mappingTargetId != null) MappingMarkers(c)
             when {
                 c.shizukuState != ShizukuState.READY -> ShizukuPanel(c)
@@ -626,12 +651,13 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
     var value by remember { mutableStateOf(TextFieldValue()) }
     var sentText by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        keyboard?.show()
-    }
-    DisposableEffect(Unit) {
-        onDispose { keyboard?.hide() }
+    LaunchedEffect(c.externalKeyboardOpen) {
+        if (c.externalKeyboardOpen) {
+            focusRequester.requestFocus()
+            keyboard?.show()
+        } else {
+            keyboard?.hide()
+        }
     }
 
     Row(
