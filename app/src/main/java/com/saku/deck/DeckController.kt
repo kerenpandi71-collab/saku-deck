@@ -311,23 +311,40 @@ class DeckController(private val app: Application) {
         busy = false
         keyDownTimes.clear()
 
-        // Serialize teardown after all previously queued input events.
+        // First wait behind any display create/resize task, then queue teardown
+        // behind all input events. This prevents release racing display creation.
         runCatching {
-            inputWorker.execute {
-                try {
+            worker.execute {
+                runCatching {
+                    inputWorker.execute {
+                        try {
+                            if (svc != null) runCatching { svc.releaseDisplay() }
+                            if (wasBinding || svc != null) {
+                                runCatching { Shizuku.unbindUserService(userServiceArgs, connection, true) }
+                            }
+                        } finally {
+                            service = null
+                            main.post {
+                                if (hostActive) {
+                                    // The Activity resumed while teardown was in flight.
+                                    shuttingDown = false
+                                    refresh()
+                                } else {
+                                    shizukuState = ShizukuState.CONNECTING
+                                }
+                            }
+                        }
+                    }
+                }.onFailure {
                     if (svc != null) runCatching { svc.releaseDisplay() }
-                    if (wasBinding || svc != null) {
-                        runCatching { Shizuku.unbindUserService(userServiceArgs, connection, true) }
+                    if (wasBinding || svc != null) runCatching {
+                        Shizuku.unbindUserService(userServiceArgs, connection, true)
                     }
-                } finally {
                     service = null
-                    main.post {
-                        if (!hostActive) shizukuState = ShizukuState.CONNECTING
-                    }
                 }
             }
         }.onFailure {
-            // If the executor is unavailable, make a best-effort synchronous cleanup.
+            // Best-effort fallback if the worker is no longer accepting tasks.
             if (svc != null) runCatching { svc.releaseDisplay() }
             if (wasBinding || svc != null) runCatching {
                 Shizuku.unbindUserService(userServiceArgs, connection, true)
