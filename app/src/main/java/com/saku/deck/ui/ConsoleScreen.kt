@@ -201,35 +201,22 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
         modifier = modifier
             .clip(RoundedCornerShape(9.dp))
             .pointerInput(c) {
-                // One finger: relative cursor. Tap: click. Hold still for
-                // 180ms, then move: drag. Two fingers: wheel scroll.
-                // A timeout (not just the next motion event) recognizes a
-                // stationary long-press. finally always releases the pointer
-                // if Android cancels the gesture or the view is interrupted.
+                // One finger: move cursor. Short tap: click. Hold still for
+                // 180ms, then move: drag. Two fingers: horizontal/vertical scroll.
+                // AwaitPointerEventScope only uses its supported pointer suspend
+                // APIs; long-press timing is evaluated from MotionEvent timestamps.
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
                     val downTime = down.uptimeMillis
                     var hold = false
                     var moved = false
+                    var travel = 0f
                     var releasedAt = 0L
                     try {
                         var active = true
                         while (active) {
-                            val remaining = (180L - (android.os.SystemClock.uptimeMillis() - downTime))
-                                .coerceAtLeast(1L)
-                            val event = if (!hold && !moved) {
-                                kotlinx.coroutines.withTimeoutOrNull(remaining) { awaitPointerEvent() }
-                            } else {
-                                awaitPointerEvent()
-                            }
-                            if (event == null) {
-                                if (!moved && !hold) {
-                                    hold = true
-                                    c.trackpadPress(true)
-                                }
-                                continue
-                            }
+                            val event = awaitPointerEvent()
                             val primary = event.changes.firstOrNull { it.id == down.id }
                             if (primary == null) {
                                 active = false
@@ -241,12 +228,12 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
                                 continue
                             }
 
-                            if (event.changes.count { it.pressed } >= 2) {
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.size >= 2) {
                                 if (hold) {
                                     c.trackpadPress(false)
                                     hold = false
                                 }
-                                val pressed = event.changes.filter { it.pressed }
                                 val dx = pressed.sumOf { it.positionChange().x.toDouble() }.toFloat()
                                 val dy = pressed.sumOf { it.positionChange().y.toDouble() }.toFloat()
                                 if (dx != 0f || dy != 0f) {
@@ -258,15 +245,20 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
                                 moved = true
                             } else {
                                 val delta = primary.positionChange()
+                                val elapsed = primary.uptimeMillis - downTime
+
+                                // Start a press before applying this movement when
+                                // the user has held for the threshold. This turns
+                                // hold-then-slide into a continuous drag stream.
+                                if (!hold && !moved && elapsed >= 180L && travel <= 14f) {
+                                    hold = true
+                                    c.trackpadPress(true)
+                                }
+
                                 if (delta.x != 0f || delta.y != 0f) {
-                                    if (hold) {
-                                        c.moveTrackpadCursor(delta.x, delta.y, size.width, size.height)
-                                    } else {
-                                        c.moveTrackpadCursor(delta.x, delta.y, size.width, size.height)
-                                        if (kotlin.math.abs(delta.x) + kotlin.math.abs(delta.y) > 14f) {
-                                            moved = true
-                                        }
-                                    }
+                                    c.moveTrackpadCursor(delta.x, delta.y, size.width, size.height)
+                                    travel += kotlin.math.abs(delta.x) + kotlin.math.abs(delta.y)
+                                    if (!hold && travel > 14f) moved = true
                                 }
                             }
                             event.changes.forEach { it.consume() }
@@ -274,6 +266,9 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
                     } finally {
                         if (hold) c.trackpadPress(false)
                     }
+
+                    // A short, stationary contact is a click. A long hold
+                    // without movement is not mistaken for a click.
                     if (!hold && !moved && releasedAt > 0L && releasedAt - downTime < 250L) {
                         c.tapTrackpadCursor()
                     }
