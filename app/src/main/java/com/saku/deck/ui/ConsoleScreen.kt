@@ -247,8 +247,14 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
                                     hold = false
                                 }
                                 val pressed = event.changes.filter { it.pressed }
+                                val dx = pressed.sumOf { it.positionChange().x.toDouble() }.toFloat()
                                 val dy = pressed.sumOf { it.positionChange().y.toDouble() }.toFloat()
-                                if (dy != 0f) c.scrollTrackpad(-dy / pressed.size / 64f)
+                                if (dx != 0f || dy != 0f) {
+                                    c.scrollTrackpad(
+                                        -dx / pressed.size / 64f,
+                                        -dy / pressed.size / 64f,
+                                    )
+                                }
                                 moved = true
                             } else {
                                 val delta = primary.positionChange()
