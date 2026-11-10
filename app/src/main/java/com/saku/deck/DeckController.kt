@@ -649,10 +649,10 @@ class DeckController(private val app: Application) {
     }
 
     /** Two-finger trackpad gesture translated into a mouse wheel scroll. */
-    fun scrollTrackpad(vertical: Float) {
+    fun scrollTrackpad(horizontal: Float, vertical: Float) {
         val svc = service ?: return
         val id = displayId
-        if (!mouseCursorInitialized || id < 0 || vertical == 0f) return
+        if (!mouseCursorInitialized || id < 0 || (horizontal == 0f && vertical == 0f)) return
         val props = arrayOf(MotionEvent.PointerProperties().apply {
             this.id = 0
             toolType = MotionEvent.TOOL_TYPE_MOUSE
@@ -660,6 +660,7 @@ class DeckController(private val app: Application) {
         val coords = arrayOf(MotionEvent.PointerCoords().apply {
             x = mouseCursorX
             y = mouseCursorY
+            setAxisValue(MotionEvent.AXIS_HSCROLL, horizontal)
             setAxisValue(MotionEvent.AXIS_VSCROLL, vertical)
         })
         val now = SystemClock.uptimeMillis()
