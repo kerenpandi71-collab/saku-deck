@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.detectTapGestures
 import androidx.compose.ui.input.pointer.positionChange
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
