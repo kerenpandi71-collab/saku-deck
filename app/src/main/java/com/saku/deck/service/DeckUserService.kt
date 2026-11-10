@@ -66,19 +66,21 @@ class DeckUserService : IDeckService.Stub() {
     private fun unwrap(t: Throwable): Throwable =
         (t as? InvocationTargetException)?.targetException ?: t
 
-    private fun requestLocalIme(builder: VirtualDisplayConfig.Builder) {
+    private fun requestHideVirtualDisplayIme(builder: VirtualDisplayConfig.Builder) {
         runCatching {
+            // The virtual app display must never spawn a second keyboard. Text
+            // entry is handled by the host Activity's Android IME bridge.
             val policy = runCatching {
-                VirtualDisplayConfig::class.java.getDeclaredField("IME_POLICY_LOCAL").apply {
+                VirtualDisplayConfig::class.java.getDeclaredField("IME_POLICY_HIDE").apply {
                     isAccessible = true
                 }.getInt(null)
-            }.getOrDefault(1)
+            }.getOrDefault(2)
             val method = builder.javaClass.methods.firstOrNull {
                 it.name == "setImePolicy" && it.parameterTypes.size == 1 &&
                     it.parameterTypes[0] == Int::class.javaPrimitiveType
             } ?: return
             method.invoke(builder, policy)
-        }.onFailure { Log.w("SakuDeck", "Local IME policy is not available on this Android build", unwrap(it)) }
+        }.onFailure { Log.w("SakuDeck", "Virtual display IME hide policy unavailable", unwrap(it)) }
     }
 
     // ---- display ------------------------------------------------------------
@@ -99,7 +101,7 @@ class DeckUserService : IDeckService.Stub() {
                     try {
                         val builder = VirtualDisplayConfig.Builder("SakuDeck", width, height, dpi)
                             .setFlags(flags)
-                        requestLocalIme(builder)
+                        requestHideVirtualDisplayIme(builder)
                         if (surface != null) builder.setSurface(surface)
                         val cb = asInterface(DISPLAY_CALLBACK, Binder())
                         val id = createMethod.invoke(
