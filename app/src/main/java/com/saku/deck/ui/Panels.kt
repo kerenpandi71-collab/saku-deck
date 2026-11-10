@@ -251,14 +251,13 @@ fun MappingDialog(c: DeckController) {
                 Modifier.fillMaxWidth().heightIn(max = 430.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Info("Pilih kontrol, lalu ketuk lokasi tombolnya pada layar game. Untuk skill, tahan tombol lalu seret untuk membidik dan lepaskan untuk cast.")
-                Info("Keyboard internal mengikuti dukungan ROM. Jika tidak muncul di display virtual, gunakan KBD LUAR untuk mengetik dari layar utama.")
+                Info("Pilih kontrol lalu ketuk posisinya di layar game. Skill dapat ditahan, diseret, lalu dilepas.")
                 c.touchMappings.forEach { target ->
                     Row(
                         Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .clickable { c.armMapping(target.id) }
-                            .padding(horizontal = 9.dp, vertical = 8.dp),
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -270,10 +269,10 @@ fun MappingDialog(c: DeckController) {
                                 .background(Deck.Accent).padding(horizontal = 8.dp, vertical = 6.dp),
                         )
                         Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                            Text(target.label, color = Deck.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(target.label, color = Deck.Ink, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             Text("${(target.x * 100).toInt()}%, ${(target.y * 100).toInt()}%", color = Deck.Ink.copy(alpha = 0.64f), fontSize = 10.sp)
                         }
-                        Text("Atur ›", color = Deck.Accent, fontSize = 11.sp)
+                        Text("ATUR", color = Deck.Accent, fontSize = 9.sp)
                     }
                 }
                 OutlinedButton(onClick = { c.beginControlLayoutEdit() }, modifier = Modifier.fillMaxWidth()) {
