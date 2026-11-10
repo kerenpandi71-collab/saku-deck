@@ -201,52 +201,74 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
         modifier = modifier
             .clip(RoundedCornerShape(9.dp))
             .pointerInput(c) {
-                // Dextop-style trackpad gestures: a still tap = click, a
-                // finger that holds STILL for 180 ms = drag, two fingers =
-                // scroll wheel. A finger that MOVES only steers the cursor:
-                // it never converts into a drag, so the cursor can never get
-                // pinned into an injected drag (which apps read as scrolling)
-                // and lifting the finger after moving never fires a click.
+                // One finger: relative cursor. Tap: click. Hold still for
+                // 180ms, then move: drag. Two fingers: wheel scroll.
+                // A timeout (not just the next motion event) recognizes a
+                // stationary long-press. finally always releases the pointer
+                // if Android cancels the gesture or the view is interrupted.
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
                     val downTime = down.uptimeMillis
-                    var travel = 0f
                     var hold = false
                     var moved = false
                     var releasedAt = 0L
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val primary = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!primary.pressed) {
-                            releasedAt = primary.uptimeMillis
-                            break
-                        }
-                        if (event.changes.size >= 2) {
-                            var dy = 0f
-                            event.changes.forEach { change -> dy += change.positionChange().y }
-                            if (dy != 0f) c.scrollTrackpad(-dy / event.changes.size / 64f)
-                        } else {
-                            val delta = primary.positionChange()
-                            travel += kotlin.math.abs(delta.x) + kotlin.math.abs(delta.y)
-                            if (delta.x != 0f || delta.y != 0f) {
-                                c.moveTrackpadCursor(delta.x, delta.y, size.width, size.height)
+                    try {
+                        var active = true
+                        while (active) {
+                            val remaining = (180L - (android.os.SystemClock.uptimeMillis() - downTime))
+                                .coerceAtLeast(1L)
+                            val event = if (!hold && !moved) {
+                                kotlinx.coroutines.withTimeoutOrNull(remaining) { awaitPointerEvent() }
+                            } else {
+                                awaitPointerEvent()
                             }
-                            if (!hold && !moved) {
-                                if (travel > 14f) {
-                                    moved = true
-                                } else if (primary.uptimeMillis - downTime > 180L) {
+                            if (event == null) {
+                                if (!moved && !hold) {
                                     hold = true
                                     c.trackpadPress(true)
                                 }
+                                continue
                             }
+                            val primary = event.changes.firstOrNull { it.id == down.id }
+                            if (primary == null) {
+                                active = false
+                                continue
+                            }
+                            if (!primary.pressed) {
+                                releasedAt = primary.uptimeMillis
+                                active = false
+                                continue
+                            }
+
+                            if (event.changes.count { it.pressed } >= 2) {
+                                if (hold) {
+                                    c.trackpadPress(false)
+                                    hold = false
+                                }
+                                val pressed = event.changes.filter { it.pressed }
+                                val dy = pressed.sumOf { it.positionChange().y.toDouble() }.toFloat()
+                                if (dy != 0f) c.scrollTrackpad(-dy / pressed.size / 64f)
+                                moved = true
+                            } else {
+                                val delta = primary.positionChange()
+                                if (delta.x != 0f || delta.y != 0f) {
+                                    if (hold) {
+                                        c.moveTrackpadCursor(delta.x, delta.y, size.width, size.height)
+                                    } else {
+                                        c.moveTrackpadCursor(delta.x, delta.y, size.width, size.height)
+                                        if (kotlin.math.abs(delta.x) + kotlin.math.abs(delta.y) > 14f) {
+                                            moved = true
+                                        }
+                                    }
+                                }
+                            }
+                            event.changes.forEach { it.consume() }
                         }
-                        event.changes.forEach { it.consume() }
+                    } finally {
+                        if (hold) c.trackpadPress(false)
                     }
-                    // The finger lifted normally; cancelled gestures emit nothing.
-                    if (hold) {
-                        c.trackpadPress(false)
-                    } else if (!moved && releasedAt > 0L && releasedAt - downTime < 250L) {
+                    if (!hold && !moved && releasedAt > 0L && releasedAt - downTime < 250L) {
                         c.tapTrackpadCursor()
                     }
                 }
@@ -737,12 +759,23 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
 
     LaunchedEffect(c.externalKeyboardOpen) {
         if (c.externalKeyboardOpen) {
-            focusRequester.requestFocus()
-            // Let the platform finish the focus transaction first; asking
-            // for the IME in the exact same frame is dropped on some MIUI
-            // builds, leaving a half-open keyboard.
-            kotlinx.coroutines.delay(120)
-            if (c.externalKeyboardOpen) keyboard?.show()
+            // MIUI/Android can report the bridge as open before its host
+            // window has regained focus from the virtual display. Retry the
+            // focus transaction briefly instead of showing an IME that is
+            // immediately dismissed by the next window-focus change.
+            repeat(8) {
+                if (!c.externalKeyboardOpen) return@LaunchedEffect
+                if (view.hasWindowFocus()) {
+                    focusRequester.requestFocus()
+                    kotlinx.coroutines.delay(90)
+                    if (c.externalKeyboardOpen && view.hasWindowFocus()) {
+                        keyboard?.show()
+                        return@LaunchedEffect
+                    }
+                } else {
+                    kotlinx.coroutines.delay(90)
+                }
+            }
         } else {
             keyboard?.hide()
         }
