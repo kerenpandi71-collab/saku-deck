@@ -5,6 +5,8 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -456,7 +458,10 @@ private fun ControlVisibilityDialog(c: DeckController) {
         onDismissRequest = { c.visibilityMenuOpen = false },
         title = { Text("Atur visibilitas tombol") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(
+                Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 Text("Pilih semua kontrol yang ingin disembunyikan. Pengaturan tersimpan otomatis.",
                     fontSize = 11.sp, color = Deck.Ink.copy(alpha = 0.72f))
                 controls.forEach { (id, label) ->
