@@ -656,11 +656,10 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
             onValueChange = { next ->
                 val previous = value.text
                 value = next
-                if (next.text.length < previous.length) {
-                    // Forward backspace immediately, even while the IME is composing.
-                    forwardTextDelta(previous, next.text, c, sendInserted = false)
-                    sentText = next.text
-                } else if (next.composition == null) {
+                // Let Android's active IME finish composing first. Only committed
+                // text is forwarded, so Gboard suggestions, autocorrect and composing
+                // spans are not mistaken for literal key presses.
+                if (next.composition == null) {
                     forwardTextDelta(sentText, next.text, c, sendInserted = true)
                     sentText = next.text
                 }
