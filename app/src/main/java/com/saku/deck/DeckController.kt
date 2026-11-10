@@ -73,6 +73,8 @@ class DeckController(private val app: Application) {
     var visibilityMenuOpen by mutableStateOf(false)
     var assistantMenuOpen by mutableStateOf(false)
     var titanPortraitMode by mutableStateOf(loadTitanPortraitMode())
+    var virtualFps by mutableIntStateOf(0)
+        private set
 
     // Cursor position for the Titan trackpad, as a 0..1 fraction of the virtual
     // display size. Stays negative until the trackpad is first used. The host UI
@@ -88,6 +90,37 @@ class DeckController(private val app: Application) {
     // SurfaceFlinger upscales it, cutting real GPU load on low-end chips.
     var performanceMode by mutableStateOf(loadPerformanceMode())
         private set
+
+    /**
+     * Read the actual presented-frame timestamps for the foreground app's
+     * SurfaceView layer from SurfaceFlinger. This is not the panel refresh rate
+     * and does not estimate FPS from Compose animations.
+     */
+    fun refreshVirtualFps() {
+        val svc = service ?: return
+        val pkg = currentApp?.packageName ?: return
+        fpsWorker.execute {
+            val measured = runCatching {
+                val layerList = svc.runShell("dumpsys SurfaceFlinger --list")
+                val candidates = layerList.lineSequence()
+                    .filter { it.contains(pkg, ignoreCase = true) }
+                    .toList()
+                val layer = candidates.firstOrNull {
+                    it.contains("SurfaceView", ignoreCase = true) ||
+                        it.contains("BLAST", ignoreCase = true)
+                } ?: candidates.firstOrNull()
+                if (layer == null) return@runCatching 0
+                val dump = svc.runShell("dumpsys SurfaceFlinger --latency \"$layer\"")
+                val cutoff = SystemClock.elapsedRealtimeNanos() - 1_000_000_000L
+                val timestamps = dump.lineSequence().drop(1).mapNotNull { line ->
+                    val columns = line.trim().split(Regex("\\s+"))
+                    columns.getOrNull(1)?.toLongOrNull()?.takeIf { it > 0L }
+                }.filter { it >= cutoff }.toList()
+                timestamps.size.coerceIn(0, 240)
+            }.getOrDefault(0)
+            main.post { virtualFps = measured }
+        }
+    }
 
     fun toggleTitanPortraitMode() {
         titanPortraitMode = !titanPortraitMode
@@ -128,6 +161,7 @@ class DeckController(private val app: Application) {
     private val worker = Executors.newSingleThreadExecutor()
     // Keep Binder input injection off the Compose/UI thread; preserve event order.
     private val inputWorker = Executors.newSingleThreadExecutor()
+    private val fpsWorker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
     private var surface: Surface? = null
