@@ -167,10 +167,18 @@ class DeckUserService : IDeckService.Stub() {
     }
 
     private fun releaseLocked() {
-        val cb = callback ?: return
-        runCatching { releaseMethod.invoke(displayManager, cb) }
-        callback = null
-        displayId = -1
+        val cb = callback ?: run {
+            displayId = -1
+            return
+        }
+        try {
+            releaseMethod.invoke(displayManager, cb)
+        } catch (t: Throwable) {
+            Log.e("SakuDeckLifecycle", "Virtual display release failed (id=$displayId)", unwrap(t))
+        } finally {
+            callback = null
+            displayId = -1
+        }
     }
 
     // ---- apps & input -------------------------------------------------------
@@ -261,9 +269,9 @@ class DeckUserService : IDeckService.Stub() {
             SUPPORTS_TOUCH or DESTROY_CONTENT_ON_REMOVAL
 
         // Tried in order; later sets drop flags some ROMs refuse.
+        // Avoid OWN_FOCUS and DEVICE_DISPLAY_GROUP: both alter system focus/display
+        // grouping and are unnecessary for a touch-capable app-hosting display.
         private val FLAG_SETS = intArrayOf(
-            BASE or TRUSTED or OWN_DISPLAY_GROUP or ALWAYS_UNLOCKED or
-                TOUCH_FEEDBACK_DISABLED or OWN_FOCUS or DEVICE_DISPLAY_GROUP,
             BASE or TRUSTED or OWN_DISPLAY_GROUP or ALWAYS_UNLOCKED or TOUCH_FEEDBACK_DISABLED,
             BASE or TRUSTED,
             BASE,
