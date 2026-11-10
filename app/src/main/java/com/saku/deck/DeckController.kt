@@ -67,6 +67,7 @@ class DeckController(private val app: Application) {
     var hiddenControls by mutableStateOf(loadHiddenControls())
         private set
     var visibilityMenuOpen by mutableStateOf(false)
+    var assistantMenuOpen by mutableStateOf(false)
 
     @Volatile
     private var service: IDeckService? = null
