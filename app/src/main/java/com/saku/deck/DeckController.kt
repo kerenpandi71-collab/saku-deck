@@ -72,6 +72,10 @@ class DeckController(private val app: Application) {
     @Volatile
     private var service: IDeckService? = null
     private var binding = false
+    @Volatile
+    private var hostActive = true
+    @Volatile
+    private var shuttingDown = false
     private var pendingEnsure = false
     private val worker = Executors.newSingleThreadExecutor()
     // Keep Binder input injection off the Compose/UI thread; preserve event order.
@@ -140,7 +144,14 @@ class DeckController(private val app: Application) {
         refresh()
     }
 
+    fun onHostResumed() {
+        hostActive = true
+        shuttingDown = false
+        refresh()
+    }
+
     fun refresh() {
+        if (!hostActive || shuttingDown) return
         if (service != null) {
             shizukuState = ShizukuState.READY
             return
@@ -212,10 +223,12 @@ class DeckController(private val app: Application) {
     }
 
     fun onSurfaceGone() {
+        // A Surface can be recreated while the Activity remains visible.
+        // Keep the display lifecycle under the host Activity; shutdown() releases it.
         releaseAllTouchPointers()
         surface = null
-        val svc = service ?: return
-        if (displayId >= 0) worker.execute { runCatching { svc.setSurface(Bundle()) } }
+        surfaceW = 0
+        surfaceH = 0
     }
 
     fun retryDisplay() {
@@ -224,6 +237,7 @@ class DeckController(private val app: Application) {
     }
 
     private fun ensureDisplay() {
+        if (!hostActive || shuttingDown) return
         val svc = service ?: return
         val s = surface ?: return
         if (surfaceW <= 0 || surfaceH <= 0) return
@@ -273,12 +287,52 @@ class DeckController(private val app: Application) {
         }
     }
 
+    /**
+     * Idempotently tears down all resources owned by the deck.
+     * Touch UP/CANCEL events are queued first; display release and Shizuku unbind
+     * are queued behind them on the same input executor so they cannot overtake
+     * an outstanding pointer release.
+     */
     fun shutdown() {
+        if (shuttingDown) return
+        hostActive = false
+        shuttingDown = true
+        pendingEnsure = false
         releaseAllTouchPointers()
-        val svc = service ?: return
-        worker.execute {
-            runCatching { svc.releaseDisplay() }
-            runCatching { Shizuku.unbindUserService(userServiceArgs, connection, true) }
+
+        val svc = service
+        val wasBinding = binding
+        binding = false
+        displayId = -1
+        displayW = 0
+        displayH = 0
+        currentApp = null
+        pickerOpen = true
+        busy = false
+        keyDownTimes.clear()
+
+        // Serialize teardown after all previously queued input events.
+        runCatching {
+            inputWorker.execute {
+                try {
+                    if (svc != null) runCatching { svc.releaseDisplay() }
+                    if (wasBinding || svc != null) {
+                        runCatching { Shizuku.unbindUserService(userServiceArgs, connection, true) }
+                    }
+                } finally {
+                    service = null
+                    main.post {
+                        if (!hostActive) shizukuState = ShizukuState.CONNECTING
+                    }
+                }
+            }
+        }.onFailure {
+            // If the executor is unavailable, make a best-effort synchronous cleanup.
+            if (svc != null) runCatching { svc.releaseDisplay() }
+            if (wasBinding || svc != null) runCatching {
+                Shizuku.unbindUserService(userServiceArgs, connection, true)
+            }
+            service = null
         }
     }
 
