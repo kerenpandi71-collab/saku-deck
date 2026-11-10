@@ -67,7 +67,9 @@ fun ConsoleScreen(c: DeckController) {
         val side = (maxWidth * 0.22f).coerceIn(150.dp, 260.dp)
         val scale = minOf(maxHeight.value / 360f, side.value / 180f).coerceIn(0.7f, 1.8f)
 
-        if (!c.gamepadHidden) {
+        if (c.titanPortraitMode) {
+            TitanPortraitShell(c, Modifier.fillMaxSize())
+        } else if (!c.gamepadHidden) {
             Row(
                 Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -86,6 +88,7 @@ fun ConsoleScreen(c: DeckController) {
         ) {
             if (c.assistantMenuOpen) {
                 listOf(
+                    (if (c.titanPortraitMode) "MODE LANDSCAPE" else "MODE PORTRAIT TITAN") to { c.toggleTitanPortraitMode() },
                     (if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() },
                     "MAPPING ML" to { c.openMappingMenu() },
                     "VISIBILITAS" to { c.visibilityMenuOpen = true },
@@ -124,6 +127,127 @@ fun ConsoleScreen(c: DeckController) {
         if (c.controlSizeMenuOpen) ControlSizeDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
         if (c.mappingMenuOpen) MappingDialog(c)
+    }
+}
+
+@Composable
+private fun TitanPortraitShell(c: DeckController, modifier: Modifier) {
+    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        val deviceWidth = minOf(maxWidth - 20.dp, 360.dp)
+        Column(
+            Modifier.width(deviceWidth)
+                .heightIn(max = maxHeight)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFF17191C))
+                .padding(horizontal = 9.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            // Titan original: near-square touchscreen above the navigation strip and QWERTY deck.
+            ScreenArea(c, Modifier.fillMaxWidth().aspectRatio(1f))
+            TitanNavigationRow(c)
+            TitanKeyboard(c)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 5.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("UNIHERTZ-STYLE", color = Color(0xFF92979E), fontSize = 7.sp, letterSpacing = 1.2.sp)
+                Text("SAKU DECK", color = Color(0xFFB7BBC1), fontSize = 7.sp, letterSpacing = 1.2.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TitanNavigationRow(c: DeckController) {
+    val keys = listOf(
+        "⌂" to KeyEvent.KEYCODE_HOME,
+        "□" to KeyEvent.KEYCODE_APP_SWITCH,
+        "▣" to KeyEvent.KEYCODE_DPAD_CENTER,
+        "‹" to KeyEvent.KEYCODE_BACK,
+        "ALT" to KeyEvent.KEYCODE_ALT_LEFT,
+    )
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 32.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        keys.forEach { (label, code) ->
+            Box(
+                Modifier.weight(1f).height(32.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color(0xFF34383D))
+                    .clickable { c.sendKey(code, true); c.sendKey(code, false) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, color = Color(0xFFE1E3E6), fontSize = if (label == "ALT") 8.sp else 13.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TitanKeyboard(c: DeckController) {
+    val rows = listOf(
+        listOf("Q","W","E","R","T","Y","U","I","O","P"),
+        listOf("A","S","D","F","G","H","J","K","L"),
+        listOf("⇧","Z","X","C","V","B","N","M","⌫"),
+    )
+    var shifted by remember { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(5.dp))
+            .background(Color(0xFF24272B)).padding(3.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        rows.forEachIndexed { rowIndex, row ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                row.forEach { key ->
+                    val wide = key == "⇧" || key == "⌫"
+                    Box(
+                        Modifier.weight(if (wide) 1.35f else 1f).height(34.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF454A50))
+                            .clickable {
+                                when (key) {
+                                    "⇧" -> shifted = !shifted
+                                    "⌫" -> c.sendKey(KeyEvent.KEYCODE_DEL, true).also { c.sendKey(KeyEvent.KEYCODE_DEL, false) }
+                                    else -> c.sendText(if (shifted) key else key.lowercase()).also { shifted = false }
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(key, color = Color(0xFFF0F1F2), fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                    }
+                }
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            TitanUtilityKey("123", Modifier.weight(1f)) { c.sendText("123") }
+            TitanUtilityKey(",", Modifier.weight(0.65f)) { c.sendText(",") }
+            TitanUtilityKey("SPACE", Modifier.weight(3.4f)) { c.sendText(" ") }
+            TitanUtilityKey(".", Modifier.weight(0.65f)) { c.sendText(".") }
+            TitanUtilityKey("↵", Modifier.weight(1f)) {
+                c.sendKey(KeyEvent.KEYCODE_ENTER, true)
+                c.sendKey(KeyEvent.KEYCODE_ENTER, false)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TitanUtilityKey(label: String, modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.height(31.dp).clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF454A50)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = Color(0xFFE7E9EB), fontSize = 9.sp)
     }
 }
 
