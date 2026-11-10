@@ -6,7 +6,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -33,11 +33,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             SakuTheme {
-                SideEffect {
+                LaunchedEffect(controller.titanPortraitMode) {
+                    // Use fixed orientations to avoid sensor-driven flips during mode changes.
                     requestedOrientation = if (controller.titanPortraitMode) {
-                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     } else {
-                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                     }
                 }
                 ConsoleScreen(controller)
