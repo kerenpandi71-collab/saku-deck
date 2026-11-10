@@ -184,7 +184,7 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
             .pointerInput(c) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
-                    c.moveTrackpadCursor(dragAmount.x / 320f, dragAmount.y / 180f)
+                    c.moveTrackpadCursor(dragAmount.x, dragAmount.y, size.width, size.height)
                 }
             }
             .pointerInput(c) {
@@ -463,20 +463,6 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
                 .background(Deck.ScreenOff)
         ) {
             VirtualSurface(c, Modifier.fillMaxSize())
-            if (c.trackpadCursorVisible && c.displayId >= 0) {
-                BoxWithConstraints(Modifier.fillMaxSize()) {
-                    Text(
-                        "➤",
-                        Modifier.offset(
-                            x = maxWidth * c.trackpadCursorX,
-                            y = maxHeight * c.trackpadCursorY,
-                        ),
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    )
-                }
-            }
             if (c.mappingTargetId != null) MappingMarkers(c)
             when {
                 c.shizukuState != ShizukuState.READY -> ShizukuPanel(c)
