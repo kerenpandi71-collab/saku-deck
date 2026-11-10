@@ -289,7 +289,11 @@ private fun dpadDirections(p: Offset, area: IntSize): Set<Int> {
 
 /** Slide-able D-pad with diagonals. */
 @Composable
-fun DPad(diameter: Dp, onKey: (Int, Boolean) -> Unit) {
+fun DPad(
+    diameter: Dp,
+    hiddenDirections: Set<Int> = emptySet(),
+    onKey: (Int, Boolean) -> Unit,
+) {
     var active by remember { mutableStateOf(emptySet<Int>()) }
     val haptic = rememberHaptic()
     val callback by rememberUpdatedState(onKey)
@@ -303,7 +307,7 @@ fun DPad(diameter: Dp, onKey: (Int, Boolean) -> Unit) {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     var current = emptySet<Int>()
                     fun update(pos: Offset) {
-                        val next = dpadDirections(pos, area)
+                        val next = dpadDirections(pos, area) - hiddenDirections
                         if (next == current) return
                         (current - next).forEach { callback(it, false) }
                         val added = next - current
@@ -340,32 +344,37 @@ fun DPad(diameter: Dp, onKey: (Int, Boolean) -> Unit) {
             // Soft drop shadow
             drawRoundRect(shadow, Offset(half - arm / 2, lift), Size(arm, len), radius)
             drawRoundRect(shadow, Offset(0f, half - arm / 2 + lift), Size(len, arm), radius)
-            // Cross
-            drawRoundRect(Deck.Control, Offset(half - arm / 2, 0f), Size(arm, len), radius)
-            drawRoundRect(Deck.Control, Offset(0f, half - arm / 2), Size(len, arm), radius)
-
+            // Center hub remains visible; each directional arm can be hidden independently.
+            drawRoundRect(Deck.Control, Offset(half - arm / 2, half - arm / 2), Size(arm, arm), radius)
             val dark = Deck.ControlDark
             val armLen = half - arm / 2
-            if (KeyEvent.KEYCODE_DPAD_UP in active)
-                drawRoundRect(dark, Offset(half - arm / 2, 0f), Size(arm, armLen + arm * 0.2f), radius)
-            if (KeyEvent.KEYCODE_DPAD_DOWN in active)
-                drawRoundRect(dark, Offset(half - arm / 2, half + arm * 0.3f), Size(arm, armLen + arm * 0.2f), radius)
-            if (KeyEvent.KEYCODE_DPAD_LEFT in active)
-                drawRoundRect(dark, Offset(0f, half - arm / 2), Size(armLen + arm * 0.2f, arm), radius)
-            if (KeyEvent.KEYCODE_DPAD_RIGHT in active)
-                drawRoundRect(dark, Offset(half + arm * 0.3f, half - arm / 2), Size(armLen + arm * 0.2f, arm), radius)
+            val up = KeyEvent.KEYCODE_DPAD_UP
+            val down = KeyEvent.KEYCODE_DPAD_DOWN
+            val left = KeyEvent.KEYCODE_DPAD_LEFT
+            val right = KeyEvent.KEYCODE_DPAD_RIGHT
+            if (up !in hiddenDirections) {
+                drawRoundRect(if (up in active) dark else Deck.Control, Offset(half - arm / 2, 0f), Size(arm, half + arm / 2), radius)
+            }
+            if (down !in hiddenDirections) {
+                drawRoundRect(if (down in active) dark else Deck.Control, Offset(half - arm / 2, half - arm / 2), Size(arm, half + arm / 2), radius)
+            }
+            if (left !in hiddenDirections) {
+                drawRoundRect(if (left in active) dark else Deck.Control, Offset(0f, half - arm / 2), Size(half + arm / 2, arm), radius)
+            }
+            if (right !in hiddenDirections) {
+                drawRoundRect(if (right in active) dark else Deck.Control, Offset(half - arm / 2, half - arm / 2), Size(half + arm / 2, arm), radius)
+            }
 
-            // Arrow marks
             val mark = Deck.BodyShade.copy(alpha = 0.75f)
             val t = arm * 0.16f
             fun tri(a: Offset, b: Offset, c: Offset) {
                 drawPath(Path().apply { moveTo(a.x, a.y); lineTo(b.x, b.y); lineTo(c.x, c.y); close() }, mark)
             }
             val edge = arm * 0.42f
-            tri(Offset(half, edge - t), Offset(half - t, edge + t * 0.4f), Offset(half + t, edge + t * 0.4f))
-            tri(Offset(half, len - edge + t), Offset(half - t, len - edge - t * 0.4f), Offset(half + t, len - edge - t * 0.4f))
-            tri(Offset(edge - t, half), Offset(edge + t * 0.4f, half - t), Offset(edge + t * 0.4f, half + t))
-            tri(Offset(len - edge + t, half), Offset(len - edge - t * 0.4f, half - t), Offset(len - edge - t * 0.4f, half + t))
+            if (up !in hiddenDirections) tri(Offset(half, edge - t), Offset(half - t, edge + t * 0.4f), Offset(half + t, edge + t * 0.4f))
+            if (down !in hiddenDirections) tri(Offset(half, len - edge + t), Offset(half - t, len - edge - t * 0.4f), Offset(half + t, len - edge - t * 0.4f))
+            if (left !in hiddenDirections) tri(Offset(edge - t, half), Offset(edge + t * 0.4f, half - t), Offset(edge + t * 0.4f, half + t))
+            if (right !in hiddenDirections) tri(Offset(len - edge + t, half), Offset(len - edge - t * 0.4f, half - t), Offset(len - edge - t * 0.4f, half + t))
 
             drawCircle(Color.Black.copy(alpha = 0.12f), arm * 0.26f, Offset(half, half))
         }
