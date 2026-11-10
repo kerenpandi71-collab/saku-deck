@@ -750,12 +750,22 @@ class DeckController(private val app: Application) {
         }
         val now = SystemClock.uptimeMillis()
         val downTime = if (down) now.also { keyDownTimes[keyCode] = it } else keyDownTimes.remove(keyCode) ?: now
+        // Standard text/navigation keys must identify as a keyboard source.
+        // Only controller buttons are tagged as gamepad events; otherwise
+        // editors may ignore Backspace, Enter and other Titan keyboard keys.
         val source = when (keyCode) {
-            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_HOME -> InputDevice.SOURCE_KEYBOARD
+            KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
+            KeyEvent.KEYCODE_BUTTON_C, KeyEvent.KEYCODE_BUTTON_X,
+            KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_BUTTON_Z,
+            KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1,
+            KeyEvent.KEYCODE_BUTTON_L2, KeyEvent.KEYCODE_BUTTON_R2,
+            KeyEvent.KEYCODE_BUTTON_THUMBL, KeyEvent.KEYCODE_BUTTON_THUMBR,
+            KeyEvent.KEYCODE_BUTTON_START, KeyEvent.KEYCODE_BUTTON_SELECT,
+            KeyEvent.KEYCODE_BUTTON_MODE -> InputDevice.SOURCE_GAMEPAD
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT ->
                 InputDevice.SOURCE_DPAD or InputDevice.SOURCE_GAMEPAD
-            else -> InputDevice.SOURCE_GAMEPAD
+            else -> InputDevice.SOURCE_KEYBOARD
         }
         val ev = KeyEvent(
             downTime, now,
