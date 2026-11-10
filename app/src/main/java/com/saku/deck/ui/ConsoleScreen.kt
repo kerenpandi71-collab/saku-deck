@@ -96,13 +96,25 @@ fun ConsoleScreen(c: DeckController) {
                         color = Color.White, fontSize = 10.sp)
                 }
             }
-            Box(
-                Modifier.size(48.dp).shadow(6.dp, CircleShape).clip(CircleShape)
-                    .background(Deck.Accent)
-                    .clickable { c.assistantMenuOpen = !c.assistantMenuOpen },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(if (c.assistantMenuOpen) "×" else "●", color = Color.White, fontSize = 22.sp)
+            if ("assistant_bubble" in c.hiddenControls) {
+                Text(
+                    "TAMPILKAN ASISTEN",
+                    Modifier.clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.88f))
+                        .clickable { c.setControlHidden("assistant_bubble", false) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    color = Color.White,
+                    fontSize = 9.sp,
+                )
+            } else {
+                Box(
+                    Modifier.size(48.dp).shadow(6.dp, CircleShape).clip(CircleShape)
+                        .background(Deck.Accent)
+                        .clickable { c.assistantMenuOpen = !c.assistantMenuOpen },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(if (c.assistantMenuOpen) "×" else "●", color = Color.White, fontSize = 22.sp)
+                }
             }
         }
         if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
@@ -135,7 +147,16 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
         }
 
         if (left) {
-            if ("dpad" !in c.hiddenControls) DPad((112 * scale).dp) { code, down -> c.sendKey(code, down) }
+            if ("dpad" !in c.hiddenControls) DPad((112 * scale).dp) { code, down ->
+                val id = when (code) {
+                    KeyEvent.KEYCODE_DPAD_UP -> "dpad_up"
+                    KeyEvent.KEYCODE_DPAD_DOWN -> "dpad_down"
+                    KeyEvent.KEYCODE_DPAD_LEFT -> "dpad_left"
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> "dpad_right"
+                    else -> null
+                }
+                if (id == null || id !in c.hiddenControls) c.sendKey(code, down)
+            }
             if ("left_stick" !in c.hiddenControls) AnalogStick(
                 diameter = (92 * scale).dp,
                 onMove = { x, y, active -> c.sendStick(false, x, y, active) },
@@ -415,7 +436,11 @@ private fun ControlVisibilityDialog(c: DeckController) {
         "extra_recall" to "Recall",
         "right_stick" to "Analog kanan",
         "left_stick" to "Analog kiri",
-        "dpad" to "D-Pad (4 arah)",
+        "dpad" to "D-Pad (semua arah)",
+        "dpad_up" to "D-Pad • Atas",
+        "dpad_down" to "D-Pad • Bawah",
+        "dpad_left" to "D-Pad • Kiri",
+        "dpad_right" to "D-Pad • Kanan",
         "l1" to "L1",
         "l2" to "L2",
         "r1" to "R1",
@@ -425,6 +450,7 @@ private fun ControlVisibilityDialog(c: DeckController) {
         "home" to "Home",
         "menu" to "Menu",
         "back" to "Kembali",
+        "assistant_bubble" to "Bola Asisten",
     )
     AlertDialog(
         onDismissRequest = { c.visibilityMenuOpen = false },
