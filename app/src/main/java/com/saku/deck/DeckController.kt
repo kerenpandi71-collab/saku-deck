@@ -520,26 +520,75 @@ class DeckController(private val app: Application) {
         externalKeyboardOpen = open
     }
 
-    var trackpadCursorX by mutableStateOf(0.5f)
-        private set
-    var trackpadCursorY by mutableStateOf(0.5f)
-        private set
-    var trackpadCursorVisible by mutableStateOf(false)
-        private set
+    private var mouseCursorX = 0f
+    private var mouseCursorY = 0f
+    private var mouseCursorInitialized = false
+    private var mouseButtonDown = false
+    private var mouseDownTime = 0L
 
-    fun moveTrackpadCursor(deltaX: Float, deltaY: Float) {
-        if (displayId < 0 || displayW <= 0 || displayH <= 0) return
-        trackpadCursorX = (trackpadCursorX + deltaX * 1.65f).coerceIn(0.015f, 0.985f)
-        trackpadCursorY = (trackpadCursorY + deltaY * 1.65f).coerceIn(0.015f, 0.985f)
-        trackpadCursorVisible = true
+    /**
+     * Dextop-style relative trackpad: movement is emitted as SOURCE_MOUSE hover
+     * events to the virtual display, letting Android render its native pointer.
+     */
+    fun moveTrackpadCursor(deltaX: Float, deltaY: Float, padWidth: Int, padHeight: Int) {
+        val svc = service ?: return
+        val id = displayId
+        if (id < 0 || displayW <= 0 || displayH <= 0 || padWidth <= 0 || padHeight <= 0) return
+        if (!mouseCursorInitialized) {
+            mouseCursorX = displayW * 0.5f
+            mouseCursorY = displayH * 0.5f
+            mouseCursorInitialized = true
+        }
+        val sensitivity = 1.35f
+        mouseCursorX = (mouseCursorX + deltaX * displayW / padWidth * sensitivity)
+            .coerceIn(1f, (displayW - 2).coerceAtLeast(1).toFloat())
+        mouseCursorY = (mouseCursorY + deltaY * displayH / padHeight * sensitivity)
+            .coerceIn(1f, (displayH - 2).coerceAtLeast(1).toFloat())
+        dispatchMouseEvent(svc, id, MotionEvent.ACTION_HOVER_MOVE, 0, SystemClock.uptimeMillis())
     }
 
     fun tapTrackpadCursor() {
-        if (!trackpadCursorVisible || displayId < 0 || displayW <= 0 || displayH <= 0) return
-        val x = trackpadCursorX * displayW
-        val y = trackpadCursorY * displayH
-        setMappedTouch("trackpad_cursor", x, y, true)
-        main.postDelayed({ setMappedTouch("trackpad_cursor", x, y, false) }, 55L)
+        val svc = service ?: return
+        val id = displayId
+        if (!mouseCursorInitialized || id < 0) return
+        val now = SystemClock.uptimeMillis()
+        mouseDownTime = now
+        mouseButtonDown = true
+        dispatchMouseEvent(svc, id, MotionEvent.ACTION_DOWN, MotionEvent.BUTTON_PRIMARY, now)
+        main.postDelayed({
+            val current = service
+            val currentId = displayId
+            if (mouseButtonDown && current != null && currentId == id) {
+                dispatchMouseEvent(current, id, MotionEvent.ACTION_UP, 0, SystemClock.uptimeMillis())
+            }
+            mouseButtonDown = false
+        }, 65L)
+    }
+
+    private fun dispatchMouseEvent(
+        svc: IDeckService,
+        id: Int,
+        action: Int,
+        buttons: Int,
+        eventTime: Long
+    ) {
+        val props = arrayOf(MotionEvent.PointerProperties().apply {
+            this.id = 0
+            toolType = MotionEvent.TOOL_TYPE_MOUSE
+        })
+        val coords = arrayOf(MotionEvent.PointerCoords().apply {
+            x = mouseCursorX
+            y = mouseCursorY
+            pressure = if (action == MotionEvent.ACTION_UP) 0f else 1f
+            size = 1f
+        })
+        val downTime = if (action == MotionEvent.ACTION_DOWN) eventTime
+            else mouseDownTime.takeIf { it > 0L } ?: eventTime
+        val event = MotionEvent.obtain(
+            downTime, eventTime, action, 1, props, coords,
+            0, buttons, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0
+        )
+        try { inject(svc, event, id) } finally { event.recycle() }
     }
 
     fun toggleGamepadHidden() {
