@@ -411,7 +411,13 @@ fun AnalogStick(
                             var v = (pos - center) / reach
                             val len = sqrt(v.x * v.x + v.y * v.y)
                             if (len > 1f) v /= len
-                            knob = v
+                            // Quantize the drawn knob: raw pointer events would
+                            // otherwise redraw this canvas up to 120 times per
+                            // second while the stick is held, costing GPU time.
+                            knob = Offset(
+                                (v.x * 12f).toInt() / 12f,
+                                (v.y * 12f).toInt() / 12f,
+                            )
                             callback(v.x, v.y, true)
                         }
                         val down = awaitFirstDown(requireUnconsumed = false)

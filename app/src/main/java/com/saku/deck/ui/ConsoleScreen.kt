@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -60,8 +61,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import com.saku.deck.DeckController
 import com.saku.deck.ShizukuState
 
@@ -72,6 +74,9 @@ fun ConsoleScreen(c: DeckController) {
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Deck.BodyHighlight, Deck.Body, Deck.BodyShade)))
             .windowInsetsPadding(WindowInsets.displayCutout)
+            // Lift the deck above the Android IME so the "KEYBOARD LUAR" field
+            // stays visible and focusable while the soft keyboard is open.
+            .imePadding()
     ) {
         val side = (maxWidth * 0.22f).coerceIn(150.dp, 260.dp)
         val scale = minOf(maxHeight.value / 360f, side.value / 180f).coerceIn(0.7f, 1.8f)
@@ -98,6 +103,7 @@ fun ConsoleScreen(c: DeckController) {
             if (c.assistantMenuOpen) {
                 listOf(
                     (if (c.titanPortraitMode) "MODE LANDSCAPE" else "MODE PORTRAIT TITAN") to { c.toggleTitanPortraitMode() },
+                    (if (c.performanceMode) "MODE KUALITAS PENUH" else "MODE PERFORMA") to { c.togglePerformanceMode() },
                     (if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() },
                     (if (c.externalKeyboardOpen) "TUTUP KEYBOARD LUAR" else "KEYBOARD LUAR") to {
                         c.updateExternalKeyboardOpen(!c.externalKeyboardOpen)
@@ -186,13 +192,38 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
         modifier = modifier
             .clip(RoundedCornerShape(9.dp))
             .pointerInput(c) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    c.moveTrackpadCursor(dragAmount.x, dragAmount.y, size.width, size.height)
+                // Dextop-style trackpad gestures: tap = click, hold longer than
+                // 180 ms = drag with the finger, two fingers = scroll wheel.
+                // Movement always drives the relative cursor, now with pointer
+                // ballistics instead of the old slippery constant speed.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
+                    val downTime = down.uptimeMillis
+                    var hold = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val primary = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!primary.pressed) break
+                        if (event.changes.size >= 2) {
+                            val second = event.changes.first { it.id != down.id }
+                            val dy = second.positionChange().y
+                            if (dy != 0f) c.scrollTrackpad(-dy / 64f)
+                        } else {
+                            val delta = primary.positionChange()
+                            if (delta.x != 0f || delta.y != 0f) {
+                                c.moveTrackpadCursor(delta.x, delta.y, size.width, size.height)
+                            }
+                            if (!hold && primary.uptimeMillis - downTime > 180L) {
+                                hold = true
+                                c.trackpadPress(true)
+                            }
+                        }
+                        event.changes.forEach { it.consume() }
+                    }
+                    // The finger lifted normally; cancelled gestures emit nothing.
+                    if (hold) c.trackpadPress(false) else c.tapTrackpadCursor()
                 }
-            }
-            .pointerInput(c) {
-                detectTapGestures { c.tapTrackpadCursor() }
             },
         factory = { context ->
             View(context).apply {
@@ -200,9 +231,6 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
                 isFocusable = false
                 isFocusableInTouchMode = false
             }
-        },
-        update = { view ->
-            view.setBackgroundColor(android.graphics.Color.rgb(48, 53, 59))
         },
     )
 }
@@ -692,6 +720,7 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
     Row(
         modifier.clip(RoundedCornerShape(14.dp))
             .background(Color.Black.copy(alpha = 0.90f))
+            .clickable { focusRequester.requestFocus() }
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),

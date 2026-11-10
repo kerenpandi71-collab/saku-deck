@@ -83,6 +83,12 @@ class DeckController(private val app: Application) {
     var trackpadCursorY by mutableFloatStateOf(-1f)
         private set
 
+    // Low-resolution render mode: the virtual display renders at 80% (density
+    // scaled by the same factor so the on-screen layout is unchanged) and
+    // SurfaceFlinger upscales it, cutting real GPU load on low-end chips.
+    var performanceMode by mutableStateOf(loadPerformanceMode())
+        private set
+
     fun toggleTitanPortraitMode() {
         titanPortraitMode = !titanPortraitMode
         app.getSharedPreferences("saku_deck_display_mode", Context.MODE_PRIVATE)
@@ -90,6 +96,22 @@ class DeckController(private val app: Application) {
         assistantMenuOpen = false
         message = if (titanPortraitMode) "Mode Unihertz Titan aktif." else "Mode Landscape aktif."
     }
+
+    fun togglePerformanceMode() {
+        performanceMode = !performanceMode
+        app.getSharedPreferences(PERFORMANCE_PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("low_resolution", performanceMode).apply()
+        message = if (performanceMode) {
+            "Mode performa aktif: resolusi render virtual display diturunkan untuk FPS stabil."
+        } else {
+            "Mode kualitas penuh aktif."
+        }
+        ensureDisplay()
+    }
+
+    private fun loadPerformanceMode(): Boolean =
+        app.getSharedPreferences(PERFORMANCE_PREFS, Context.MODE_PRIVATE)
+            .getBoolean("low_resolution", false)
 
     private fun loadTitanPortraitMode(): Boolean =
         app.getSharedPreferences("saku_deck_display_mode", Context.MODE_PRIVATE)
@@ -271,9 +293,10 @@ class DeckController(private val app: Application) {
             pendingEnsure = true
             return
         }
-        val w = surfaceW and 1.inv()
-        val h = surfaceH and 1.inv()
-        val dpi = (app.resources.displayMetrics.densityDpi * DPI_SCALE).toInt().coerceAtLeast(120)
+        val quality = if (performanceMode) PERFORMANCE_RENDER_SCALE else 1f
+        val w = ((surfaceW * quality).toInt() and 1.inv()).coerceAtLeast(64)
+        val h = ((surfaceH * quality).toInt() and 1.inv()).coerceAtLeast(64)
+        val dpi = (app.resources.displayMetrics.densityDpi * DPI_SCALE * quality).toInt().coerceAtLeast(120)
         val existing = displayId
         busy = true
         worker.execute {
@@ -544,6 +567,10 @@ class DeckController(private val app: Application) {
     private var mouseCursorInitialized = false
     private var mouseDownTime = 0L
     private var lastHoverSentAt = 0L
+    private var trackpadContactActive = false
+    private var lastMappedMoveAt = 0L
+    private var lastAxesSentAt = 0L
+    private var lastAxesSent = FloatArray(6)
 
     /**
      * Relative trackpad: movement updates an internal cursor position that the
@@ -559,13 +586,24 @@ class DeckController(private val app: Application) {
             mouseCursorY = displayH * 0.5f
             mouseCursorInitialized = true
         }
-        val sensitivity = 1.35f
-        mouseCursorX = (mouseCursorX + deltaX * displayW / padWidth * sensitivity)
+        // Pointer ballistics like a real desktop cursor: slow drags move
+        // precisely, quick flicks travel further. This replaces the old
+        // constant-speed scaling that made the trackpad feel slippery.
+        val travel = kotlin.math.hypot(deltaX, deltaY)
+        val speed = travel / padWidth.coerceAtLeast(1)
+        val gain = TRACKPAD_MIN_GAIN +
+            (TRACKPAD_MAX_GAIN - TRACKPAD_MIN_GAIN) * (speed / 1.2f).coerceIn(0f, 1f)
+        mouseCursorX = (mouseCursorX + deltaX * displayW / padWidth * gain)
             .coerceIn(1f, (displayW - 2).coerceAtLeast(1).toFloat())
-        mouseCursorY = (mouseCursorY + deltaY * displayH / padHeight * sensitivity)
+        mouseCursorY = (mouseCursorY + deltaY * displayH / padHeight * gain)
             .coerceIn(1f, (displayH - 2).coerceAtLeast(1).toFloat())
         trackpadCursorX = mouseCursorX / displayW
         trackpadCursorY = mouseCursorY / displayH
+        if (trackpadContactActive) {
+            // While dragging, the held touch contact follows the cursor.
+            setMappedTouch(TRACKPAD_TOUCH_KEY, mouseCursorX, mouseCursorY, true)
+            return
+        }
         val now = SystemClock.uptimeMillis()
         // Mouse-aware apps still receive hover moves, throttled to roughly one
         // event per frame so the Binder input queue can never outpace the game.
@@ -586,6 +624,35 @@ class DeckController(private val app: Application) {
         main.postDelayed({
             setMappedTouch(TRACKPAD_TOUCH_KEY, x, y, false)
         }, 65L)
+    }
+
+    /** Dextop-style press-and-hold: a held trackpad contact becomes a real drag. */
+    fun trackpadPress(down: Boolean) {
+        if (!mouseCursorInitialized || displayId < 0) return
+        trackpadContactActive = down
+        setMappedTouch(TRACKPAD_TOUCH_KEY, mouseCursorX, mouseCursorY, down)
+    }
+
+    /** Two-finger trackpad gesture translated into a mouse wheel scroll. */
+    fun scrollTrackpad(vertical: Float) {
+        val svc = service ?: return
+        val id = displayId
+        if (!mouseCursorInitialized || id < 0 || vertical == 0f) return
+        val props = arrayOf(MotionEvent.PointerProperties().apply {
+            this.id = 0
+            toolType = MotionEvent.TOOL_TYPE_MOUSE
+        })
+        val coords = arrayOf(MotionEvent.PointerCoords().apply {
+            x = mouseCursorX
+            y = mouseCursorY
+            setAxisValue(MotionEvent.AXIS_VSCROLL, vertical)
+        })
+        val now = SystemClock.uptimeMillis()
+        val event = MotionEvent.obtain(
+            now, now, MotionEvent.ACTION_SCROLL, 1, props, coords,
+            0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0
+        )
+        try { inject(svc, event, id) } finally { event.recycle() }
     }
 
     private fun dispatchMouseEvent(
@@ -748,7 +815,14 @@ class DeckController(private val app: Application) {
         val svc = service ?: return
         val id = displayId
         if (id < 0) return
+        // Joystick axes only matter to gamepad-aware apps, so rate-limit them
+        // while always letting the neutral (all-zero) state through.
+        val force = axes.all { it == 0f }
         val now = SystemClock.uptimeMillis()
+        if (!force && now - lastAxesSentAt < 8L) return
+        lastAxesSentAt = now
+        if (!force && axes.contentEquals(lastAxesSent)) return
+        lastAxesSent = axes.copyOf()
         val props = arrayOf(MotionEvent.PointerProperties().apply {
             this.id = 0
             toolType = MotionEvent.TOOL_TYPE_UNKNOWN
@@ -845,7 +919,14 @@ class DeckController(private val app: Application) {
                 else {
                     point.x = x
                     point.y = y
-                    dispatchTouchLocked(MotionEvent.ACTION_MOVE)
+                    // Analog sticks and skill wheels fire up to 120 times per
+                    // second; coalesce MOVE injection to about 8 ms so the
+                    // injected input stream never floods the game.
+                    val now = SystemClock.uptimeMillis()
+                    if (now - lastMappedMoveAt >= 8L) {
+                        lastMappedMoveAt = now
+                        dispatchTouchLocked(MotionEvent.ACTION_MOVE)
+                    }
                 }
             } else {
                 removeTouchLocked(key)
@@ -939,6 +1020,10 @@ class DeckController(private val app: Application) {
         const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         private const val REQUEST_CODE = 7
         private const val TRACKPAD_TOUCH_KEY = "trackpad_cursor"
+        private const val PERFORMANCE_PREFS = "saku_deck_performance"
+        private const val PERFORMANCE_RENDER_SCALE = 0.8f
+        private const val TRACKPAD_MIN_GAIN = 0.55f
+        private const val TRACKPAD_MAX_GAIN = 1.6f
         private const val MAPPING_PREFS = "mobile_legends_touch_mapping"
         private const val CONTROL_LAYOUT_PREFS = "mobile_legends_control_layout"
         private const val CONTROL_SIZE_PREFS = "face_control_sizes"
