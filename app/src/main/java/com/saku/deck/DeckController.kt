@@ -57,6 +57,9 @@ class DeckController(private val app: Application) {
         private set
     var controlPositions by mutableStateOf(loadControlPositions())
         private set
+    var controlSizes by mutableStateOf(loadControlSizes())
+        private set
+    var controlSizeMenuOpen by mutableStateOf(false)
     var mappingMenuOpen by mutableStateOf(false)
     var mappingTargetId by mutableStateOf<String?>(null)
     var controlLayoutEditing by mutableStateOf(false)
@@ -441,6 +444,28 @@ class DeckController(private val app: Application) {
         message = "Preset Mobile Legends dipulihkan. Sesuaikan posisi jika layout game berbeda."
     }
 
+    fun setControlSize(id: String, sizeDp: Float) {
+        if (id !in FACE_CONTROL_IDS) return
+        val safeSize = sizeDp.coerceIn(MIN_FACE_SIZE_DP, MAX_FACE_SIZE_DP)
+        controlSizes = controlSizes + (id to safeSize)
+        app.getSharedPreferences(CONTROL_SIZE_PREFS, Context.MODE_PRIVATE)
+            .edit().putFloat(id, safeSize).apply()
+    }
+
+    fun resetControlSizes() {
+        controlSizes = DEFAULT_FACE_CONTROL_SIZES
+        val prefs = app.getSharedPreferences(CONTROL_SIZE_PREFS, Context.MODE_PRIVATE).edit().clear()
+        DEFAULT_FACE_CONTROL_SIZES.forEach { (id, size) -> prefs.putFloat(id, size) }
+        prefs.apply()
+    }
+
+    private fun loadControlSizes(): Map<String, Float> {
+        val prefs = app.getSharedPreferences(CONTROL_SIZE_PREFS, Context.MODE_PRIVATE)
+        return DEFAULT_FACE_CONTROL_SIZES.mapValues { (id, default) ->
+            prefs.getFloat(id, default).coerceIn(MIN_FACE_SIZE_DP, MAX_FACE_SIZE_DP)
+        }
+    }
+
     fun beginControlLayoutEdit() {
         mappingMenuOpen = false
         controlLayoutEditing = true
@@ -808,6 +833,16 @@ class DeckController(private val app: Application) {
         private const val REQUEST_CODE = 7
         private const val MAPPING_PREFS = "mobile_legends_touch_mapping"
         private const val CONTROL_LAYOUT_PREFS = "mobile_legends_control_layout"
+        private const val CONTROL_SIZE_PREFS = "face_control_sizes"
+        private const val MIN_FACE_SIZE_DP = 40f
+        private const val MAX_FACE_SIZE_DP = 200f
+        private val FACE_CONTROL_IDS = setOf("face_a", "face_b", "face_x", "face_y")
+        private val DEFAULT_FACE_CONTROL_SIZES = mapOf(
+            "face_a" to 80f,
+            "face_b" to 65f,
+            "face_x" to 65f,
+            "face_y" to 65f,
+        )
         private const val CONTROL_VISIBILITY_PREFS = "control_visibility"
         // Virtual display density relative to the phone, so apps fit the smaller center screen.
         private const val DPI_SCALE = 0.75f
