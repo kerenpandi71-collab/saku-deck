@@ -92,6 +92,9 @@ fun ConsoleScreen(c: DeckController) {
                 listOf(
                     (if (c.titanPortraitMode) "MODE LANDSCAPE" else "MODE PORTRAIT TITAN") to { c.toggleTitanPortraitMode() },
                     (if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() },
+                    (if (c.externalKeyboardOpen) "TUTUP KEYBOARD LUAR" else "KEYBOARD LUAR") to {
+                        c.updateExternalKeyboardOpen(!c.externalKeyboardOpen)
+                    },
                     "MAPPING ML" to { c.openMappingMenu() },
                     "VISIBILITAS" to { c.visibilityMenuOpen = true },
                     "UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true },
@@ -125,6 +128,12 @@ fun ConsoleScreen(c: DeckController) {
                 }
             }
         }
+        if (c.externalKeyboardOpen) {
+            ExternalKeyboardBridge(
+                c,
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+        }
         if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
         if (c.controlSizeMenuOpen) ControlSizeDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
@@ -135,7 +144,9 @@ fun ConsoleScreen(c: DeckController) {
 @Composable
 private fun TitanPortraitShell(c: DeckController, modifier: Modifier) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
-        val deviceWidth = minOf(maxWidth - 20.dp, 360.dp)
+        // Use the full physical phone width; the old 360dp cap made the Titan body look tiny
+        // on the Redmi 12C when rendered inside the portrait host window.
+        val deviceWidth = (maxWidth - 12.dp).coerceAtLeast(1.dp)
         Column(
             Modifier.width(deviceWidth)
                 .heightIn(max = maxHeight)
