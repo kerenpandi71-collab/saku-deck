@@ -388,6 +388,51 @@ private fun ControlLayoutBar(c: DeckController, modifier: Modifier) {
 }
 
 @Composable
+private fun ControlVisibilityDialog(c: DeckController) {
+    val controls = listOf(
+        "face_a" to "Tombol A",
+        "face_b" to "Tombol B",
+        "face_x" to "Tombol X",
+        "face_y" to "Tombol Y",
+        "extra_spell" to "Battle Spell",
+        "extra_regen" to "Regen",
+        "extra_recall" to "Recall",
+        "right_stick" to "Analog kanan",
+    )
+    AlertDialog(
+        onDismissRequest = { c.visibilityMenuOpen = false },
+        title = { Text("Atur visibilitas tombol") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Matikan tombol yang tidak digunakan. Pengaturan tersimpan otomatis.",
+                    fontSize = 11.sp, color = Deck.Ink.copy(alpha = 0.72f))
+                controls.forEach { (id, label) ->
+                    val hidden = id in c.hiddenControls
+                    Row(
+                        Modifier.fillMaxWidth().clickable { c.setControlHidden(id, !hidden) }
+                            .padding(vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(label, Modifier.weight(1f), color = Deck.Ink, fontSize = 13.sp)
+                        Text(if (hidden) "TERSEMBUNYI" else "DITAMPILKAN",
+                            color = if (hidden) Deck.Accent else Deck.Ink.copy(alpha = 0.65f),
+                            fontSize = 9.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { c.visibilityMenuOpen = false }) { Text("SELESAI") }
+        },
+        dismissButton = {
+            TextButton(onClick = { controls.forEach { c.setControlHidden(it.first, false) } }) {
+                Text("RESET")
+            }
+        },
+    )
+}
+
+@Composable
 private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
