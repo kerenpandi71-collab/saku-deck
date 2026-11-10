@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,6 +32,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.saku.deck.DeckController
 import com.saku.deck.ShizukuState
@@ -42,6 +45,17 @@ fun ConsoleScreen(c: DeckController) {
             .background(Brush.verticalGradient(listOf(Deck.BodyHighlight, Deck.Body, Deck.BodyShade)))
             .windowInsetsPadding(WindowInsets.displayCutout)
     ) {
+        if (maxHeight > maxWidth) {
+            PortraitConsole(c, maxWidth)
+        } else {
+            LandscapeConsole(c)
+        }
+    }
+}
+
+@Composable
+private fun LandscapeConsole(c: DeckController) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         val side = (maxWidth * 0.22f).coerceIn(150.dp, 260.dp)
         val scale = minOf(maxHeight.value / 360f, side.value / 180f).coerceIn(0.7f, 1.8f)
 
@@ -54,6 +68,72 @@ fun ConsoleScreen(c: DeckController) {
             SidePanel(left = true, c = c, scale = scale, modifier = Modifier.width(side).fillMaxHeight())
             ScreenArea(c, Modifier.weight(1f).fillMaxHeight().padding(horizontal = 4.dp))
             SidePanel(left = false, c = c, scale = scale, modifier = Modifier.width(side).fillMaxHeight())
+        }
+    }
+}
+
+/** Portrait layout: full-width game screen on top, controls below for thumb reach. */
+@Composable
+private fun PortraitConsole(c: DeckController, width: Dp) {
+    val scale = (width.value / 360f).coerceIn(0.85f, 1.3f)
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy((8 * scale).dp)) {
+                ShoulderButton("L2", scale) { c.setTrigger(true, it) }
+                ShoulderButton("L1", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_L1, it) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy((8 * scale).dp)) {
+                ShoulderButton("R1", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_R1, it) }
+                ShoulderButton("R2", scale) { c.setTrigger(false, it) }
+            }
+        }
+
+        ScreenArea(c, Modifier.fillMaxWidth().weight(1f).padding(vertical = 6.dp))
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height((222 * scale).dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                DPad((112 * scale).dp) { code, down -> c.sendKey(code, down) }
+                AnalogStick((92 * scale).dp) { x, y -> c.sendStick(false, x, y) }
+            }
+            Column(
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                FaceButtons((118 * scale).dp) { code, down -> c.sendKey(code, down) }
+                AnalogStick((92 * scale).dp) { x, y -> c.sendStick(true, x, y) }
+            }
+        }
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = (6 * scale).dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy((10 * scale).dp)) {
+                PillButton("SELECT", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_SELECT, it) }
+                PillButton("KEMBALI", scale) { c.sendKey(KeyEvent.KEYCODE_BACK, it) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy((10 * scale).dp)) {
+                PillButton("START", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_START, it) }
+                PillButton("MENU", scale, accent = true) { if (it) c.openPicker() }
+            }
         }
     }
 }
