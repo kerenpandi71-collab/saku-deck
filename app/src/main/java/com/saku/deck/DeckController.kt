@@ -520,6 +520,28 @@ class DeckController(private val app: Application) {
         externalKeyboardOpen = open
     }
 
+    var trackpadCursorX by mutableStateOf(0.5f)
+        private set
+    var trackpadCursorY by mutableStateOf(0.5f)
+        private set
+    var trackpadCursorVisible by mutableStateOf(false)
+        private set
+
+    fun moveTrackpadCursor(deltaX: Float, deltaY: Float) {
+        if (displayId < 0 || displayW <= 0 || displayH <= 0) return
+        trackpadCursorX = (trackpadCursorX + deltaX * 1.65f).coerceIn(0.015f, 0.985f)
+        trackpadCursorY = (trackpadCursorY + deltaY * 1.65f).coerceIn(0.015f, 0.985f)
+        trackpadCursorVisible = true
+    }
+
+    fun tapTrackpadCursor() {
+        if (!trackpadCursorVisible || displayId < 0 || displayW <= 0 || displayH <= 0) return
+        val x = trackpadCursorX * displayW
+        val y = trackpadCursorY * displayH
+        setMappedTouch("trackpad_cursor", x, y, true)
+        main.postDelayed({ setMappedTouch("trackpad_cursor", x, y, false) }, 55L)
+    }
+
     fun toggleGamepadHidden() {
         gamepadHidden = !gamepadHidden
         app.getSharedPreferences(CONTROL_VISIBILITY_PREFS, Context.MODE_PRIVATE)
