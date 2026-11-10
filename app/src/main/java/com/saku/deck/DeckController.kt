@@ -582,11 +582,7 @@ class DeckController(private val app: Application) {
         val svc = service ?: return
         val id = displayId
         if (id < 0 || displayW <= 0 || displayH <= 0 || padWidth <= 0 || padHeight <= 0) return
-        if (!mouseCursorInitialized) {
-            mouseCursorX = displayW * 0.5f
-            mouseCursorY = displayH * 0.5f
-            mouseCursorInitialized = true
-        }
+        ensureTrackpadCursor()
         // Pointer ballistics like a real desktop cursor: slow drags move
         // precisely, quick flicks travel further. This replaces the old
         // constant-speed scaling that made the trackpad feel slippery.
@@ -617,7 +613,18 @@ class DeckController(private val app: Application) {
         }
     }
 
+    private fun ensureTrackpadCursor() {
+        if (!mouseCursorInitialized && displayW > 0 && displayH > 0) {
+            mouseCursorX = displayW * 0.5f
+            mouseCursorY = displayH * 0.5f
+            trackpadCursorX = 0.5f
+            trackpadCursorY = 0.5f
+            mouseCursorInitialized = true
+        }
+    }
+
     fun tapTrackpadCursor() {
+        ensureTrackpadCursor()
         if (!mouseCursorInitialized || displayId < 0) return
         // Tap as a real touchscreen contact instead of a mouse click: every app
         // accepts touch, while injected mouse buttons are ignored by many apps
@@ -635,6 +642,7 @@ class DeckController(private val app: Application) {
 
     /** Dextop-style press-and-hold: a held trackpad contact becomes a real drag. */
     fun trackpadPress(down: Boolean) {
+        ensureTrackpadCursor()
         if (!mouseCursorInitialized || displayId < 0) return
         trackpadContactActive = down
         setMappedTouch(TRACKPAD_TOUCH_KEY, mouseCursorX, mouseCursorY, down)
