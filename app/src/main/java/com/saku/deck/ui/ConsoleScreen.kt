@@ -147,16 +147,16 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
         }
 
         if (left) {
-            if ("dpad" !in c.hiddenControls) DPad((112 * scale).dp) { code, down ->
-                val id = when (code) {
-                    KeyEvent.KEYCODE_DPAD_UP -> "dpad_up"
-                    KeyEvent.KEYCODE_DPAD_DOWN -> "dpad_down"
-                    KeyEvent.KEYCODE_DPAD_LEFT -> "dpad_left"
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> "dpad_right"
-                    else -> null
-                }
-                if (id == null || id !in c.hiddenControls) c.sendKey(code, down)
-            }
+            if ("dpad" !in c.hiddenControls) DPad(
+                diameter = (112 * scale).dp,
+                hiddenDirections = buildSet {
+                    if ("dpad_up" in c.hiddenControls) add(KeyEvent.KEYCODE_DPAD_UP)
+                    if ("dpad_down" in c.hiddenControls) add(KeyEvent.KEYCODE_DPAD_DOWN)
+                    if ("dpad_left" in c.hiddenControls) add(KeyEvent.KEYCODE_DPAD_LEFT)
+                    if ("dpad_right" in c.hiddenControls) add(KeyEvent.KEYCODE_DPAD_RIGHT)
+                },
+                onKey = { code, down -> c.sendKey(code, down) },
+            )
             if ("left_stick" !in c.hiddenControls) AnalogStick(
                 diameter = (92 * scale).dp,
                 onMove = { x, y, active -> c.sendStick(false, x, y, active) },
