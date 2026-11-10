@@ -238,8 +238,8 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
                                 val dy = pressed.sumOf { it.positionChange().y.toDouble() }.toFloat()
                                 if (dx != 0f || dy != 0f) {
                                     c.scrollTrackpad(
-                                        -dx / pressed.size / 64f,
-                                        -dy / pressed.size / 64f,
+                                        -dx / pressed.size / 28f,
+                                        -dy / pressed.size / 28f,
                                     )
                                 }
                                 moved = true
@@ -286,26 +286,23 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
 
 @Composable
 private fun TitanNavigationRow(c: DeckController) {
-    val keys = listOf(
-        "⌂" to KeyEvent.KEYCODE_HOME,
-        "□" to KeyEvent.KEYCODE_APP_SWITCH,
-        "▣" to KeyEvent.KEYCODE_DPAD_CENTER,
-        "‹" to KeyEvent.KEYCODE_BACK,
-        "ALT" to KeyEvent.KEYCODE_ALT_LEFT,
-    )
+    // Keep only the two navigation controls requested: Back and Home.
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 32.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        Modifier.fillMaxWidth().heightIn(min = 34.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        keys.forEach { (label, code) ->
+        listOf(
+            "‹" to KeyEvent.KEYCODE_BACK,
+            "⌂" to KeyEvent.KEYCODE_HOME,
+        ).forEach { (label, code) ->
             Box(
-                Modifier.weight(1f).height(32.dp)
-                    .clip(RoundedCornerShape(3.dp))
+                Modifier.weight(1f).height(34.dp)
+                    .clip(RoundedCornerShape(5.dp))
                     .background(Color(0xFF34383D))
                     .clickable { c.sendKey(code, true); c.sendKey(code, false) },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, color = Color(0xFFE1E3E6), fontSize = if (label == "ALT") 8.sp else 13.sp)
+                Text(label, color = Color(0xFFE1E3E6), fontSize = 16.sp)
             }
         }
     }
@@ -313,18 +310,32 @@ private fun TitanNavigationRow(c: DeckController) {
 
 @Composable
 private fun TitanKeyboard(c: DeckController) {
-    val rows = listOf(
+    val letterRows = listOf(
         listOf("Q","W","E","R","T","Y","U","I","O","P"),
         listOf("A","S","D","F","G","H","J","K","L"),
         listOf("⇧","Z","X","C","V","B","N","M","⌫"),
     )
+    val numberRows = listOf(
+        listOf("1","2","3","4","5","6","7","8","9","0"),
+        listOf("@","#","$","%","&","-","+","(",")","/"),
+        listOf("⇧","=","*","\"","'",";",":","!","⌫"),
+    )
+    var symbols by remember { mutableStateOf(false) }
     var shifted by remember { mutableStateOf(false) }
+    val rows = if (symbols) numberRows else letterRows
+    val shiftedSymbols = mapOf(
+        "1" to "!", "2" to "@", "3" to "#", "4" to "$", "5" to "%",
+        "6" to "^", "7" to "&", "8" to "*", "9" to "(", "0" to ")",
+        "=" to "+", "*" to "×", "\"" to "\"", "'" to "`",
+        ";" to ":", ":" to ";", "!" to "?", "@" to "~",
+    )
+
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(5.dp))
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
             .background(Color(0xFF24272B)).padding(3.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        rows.forEachIndexed { rowIndex, row ->
+        rows.forEach { row ->
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -338,13 +349,30 @@ private fun TitanKeyboard(c: DeckController) {
                             .clickable {
                                 when (key) {
                                     "⇧" -> shifted = !shifted
-                                    "⌫" -> c.sendKey(KeyEvent.KEYCODE_DEL, true).also { c.sendKey(KeyEvent.KEYCODE_DEL, false) }
-                                    else -> c.sendText(if (shifted) key else key.lowercase()).also { shifted = false }
+                                    "⌫" -> {
+                                        c.sendKey(KeyEvent.KEYCODE_DEL, true)
+                                        c.sendKey(KeyEvent.KEYCODE_DEL, false)
+                                    }
+                                    else -> {
+                                        val output = when {
+                                            symbols && shifted -> shiftedSymbols[key] ?: key
+                                            symbols -> key
+                                            shifted -> key
+                                            else -> key.lowercase()
+                                        }
+                                        c.sendText(output)
+                                        if (shifted) shifted = false
+                                    }
                                 }
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(key, color = Color(0xFFF0F1F2), fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                        Text(
+                            key,
+                            color = Color(0xFFF0F1F2),
+                            fontSize = 12.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                        )
                     }
                 }
             }
@@ -353,7 +381,10 @@ private fun TitanKeyboard(c: DeckController) {
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            TitanUtilityKey("123", Modifier.weight(1f)) { c.sendText("123") }
+            TitanUtilityKey(if (symbols) "ABC" else "123", Modifier.weight(1f)) {
+                symbols = !symbols
+                shifted = false
+            }
             TitanUtilityKey(",", Modifier.weight(0.65f)) { c.sendText(",") }
             TitanUtilityKey("SPACE", Modifier.weight(3.4f)) { c.sendText(" ") }
             TitanUtilityKey(".", Modifier.weight(0.65f)) { c.sendText(".") }
@@ -818,12 +849,13 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
         BasicTextField(
             value = value,
             onValueChange = { next ->
-                val previous = value.text
                 value = next
-                // Let Android's active IME finish composing first. Only committed
-                // text is forwarded, so Gboard suggestions, autocorrect and composing
-                // spans are not mistaken for literal key presses.
-                if (next.composition == null) {
+                // Mirror composing updates as well as committed text. Each update
+                // replaces the previous proxy text on the virtual display, so
+                // Gboard's live composition, correction and final commit stay in sync.
+                // The host EditText remains the IME target; only the resulting key
+                // sequence is forwarded to the app running on the virtual display.
+                if (next.text != sentText) {
                     forwardTextDelta(sentText, next.text, c, sendInserted = true)
                     sentText = next.text
                 }
