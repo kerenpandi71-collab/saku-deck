@@ -38,6 +38,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +56,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -74,9 +76,13 @@ fun ConsoleScreen(c: DeckController) {
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Deck.BodyHighlight, Deck.Body, Deck.BodyShade)))
             .windowInsetsPadding(WindowInsets.displayCutout)
-            // Lift the deck above the Android IME so the "KEYBOARD LUAR" field
-            // stays visible and focusable while the soft keyboard is open.
-            .imePadding()
+            // IMPORTANT: keep imePadding OFF this root. Padding the whole
+            // deck resized the game SurfaceView on every IME animation
+            // frame, and every resizeVirtualDisplay made the system
+            // re-evaluate window focus between the host and the virtual
+            // display, so the soft keyboard flickered open/closed in a loop.
+            // Only the keyboard bridge pads itself above the IME, so the
+            // virtual display keeps a stable size while typing.
     ) {
         val side = (maxWidth * 0.22f).coerceIn(150.dp, 260.dp)
         val scale = minOf(maxHeight.value / 360f, side.value / 180f).coerceIn(0.7f, 1.8f)
@@ -144,7 +150,10 @@ fun ConsoleScreen(c: DeckController) {
         if (c.externalKeyboardOpen) {
             ExternalKeyboardBridge(
                 c,
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+                // The bridge alone lifts above the soft keyboard; the deck
+                // itself (and the game surface) keeps its exact size.
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             )
         }
         if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
@@ -192,37 +201,54 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
         modifier = modifier
             .clip(RoundedCornerShape(9.dp))
             .pointerInput(c) {
-                // Dextop-style trackpad gestures: tap = click, hold longer than
-                // 180 ms = drag with the finger, two fingers = scroll wheel.
-                // Movement always drives the relative cursor, now with pointer
-                // ballistics instead of the old slippery constant speed.
+                // Dextop-style trackpad gestures: a still tap = click, a
+                // finger that holds STILL for 180 ms = drag, two fingers =
+                // scroll wheel. A finger that MOVES only steers the cursor:
+                // it never converts into a drag, so the cursor can never get
+                // pinned into an injected drag (which apps read as scrolling)
+                // and lifting the finger after moving never fires a click.
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
                     val downTime = down.uptimeMillis
+                    var travel = 0f
                     var hold = false
+                    var moved = false
+                    var releasedAt = 0L
                     while (true) {
                         val event = awaitPointerEvent()
                         val primary = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!primary.pressed) break
+                        if (!primary.pressed) {
+                            releasedAt = primary.uptimeMillis
+                            break
+                        }
                         if (event.changes.size >= 2) {
-                            val second = event.changes.first { it.id != down.id }
-                            val dy = second.positionChange().y
-                            if (dy != 0f) c.scrollTrackpad(-dy / 64f)
+                            var dy = 0f
+                            event.changes.forEach { change -> dy += change.positionChange().y }
+                            if (dy != 0f) c.scrollTrackpad(-dy / event.changes.size / 64f)
                         } else {
                             val delta = primary.positionChange()
+                            travel += kotlin.math.abs(delta.x) + kotlin.math.abs(delta.y)
                             if (delta.x != 0f || delta.y != 0f) {
                                 c.moveTrackpadCursor(delta.x, delta.y, size.width, size.height)
                             }
-                            if (!hold && primary.uptimeMillis - downTime > 180L) {
-                                hold = true
-                                c.trackpadPress(true)
+                            if (!hold && !moved) {
+                                if (travel > 14f) {
+                                    moved = true
+                                } else if (primary.uptimeMillis - downTime > 180L) {
+                                    hold = true
+                                    c.trackpadPress(true)
+                                }
                             }
                         }
                         event.changes.forEach { it.consume() }
                     }
                     // The finger lifted normally; cancelled gestures emit nothing.
-                    if (hold) c.trackpadPress(false) else c.tapTrackpadCursor()
+                    if (hold) {
+                        c.trackpadPress(false)
+                    } else if (!moved && releasedAt > 0L && releasedAt - downTime < 250L) {
+                        c.tapTrackpadCursor()
+                    }
                 }
             },
         factory = { context ->
@@ -704,6 +730,7 @@ private fun ControlVisibilityDialog(c: DeckController) {
 @Composable
 private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
     val keyboard = LocalSoftwareKeyboardController.current
+    val view = LocalView.current
     val focusRequester = remember { FocusRequester() }
     var value by remember { mutableStateOf(TextFieldValue()) }
     var sentText by remember { mutableStateOf("") }
@@ -711,10 +738,39 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
     LaunchedEffect(c.externalKeyboardOpen) {
         if (c.externalKeyboardOpen) {
             focusRequester.requestFocus()
-            keyboard?.show()
+            // Let the platform finish the focus transaction first; asking
+            // for the IME in the exact same frame is dropped on some MIUI
+            // builds, leaving a half-open keyboard.
+            kotlinx.coroutines.delay(120)
+            if (c.externalKeyboardOpen) keyboard?.show()
         } else {
             keyboard?.hide()
         }
+    }
+
+    // Injecting input into the virtual display can briefly steal window focus
+    // from this host window, which hides the soft keyboard mid-typing. When
+    // this window gets focus back while the bridge is open, re-focus the
+    // field and bring the IME up again. The 300 ms guard stops the listener
+    // and the system from fighting over the keyboard in a tight loop.
+    DisposableEffect(view) {
+        var lastRecoverAt = 0L
+        val listener = android.view.ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (hasFocus && c.externalKeyboardOpen) {
+                val now = android.os.SystemClock.uptimeMillis()
+                if (now - lastRecoverAt >= 300L) {
+                    lastRecoverAt = now
+                    view.post {
+                        if (c.externalKeyboardOpen) {
+                            focusRequester.requestFocus()
+                            keyboard?.show()
+                        }
+                    }
+                }
+            }
+        }
+        view.viewTreeObserver.addOnWindowFocusChangeListener(listener)
+        onDispose { view.viewTreeObserver.removeOnWindowFocusChangeListener(listener) }
     }
 
     Row(

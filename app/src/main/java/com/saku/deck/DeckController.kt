@@ -568,6 +568,7 @@ class DeckController(private val app: Application) {
     private var mouseDownTime = 0L
     private var lastHoverSentAt = 0L
     private var trackpadContactActive = false
+    private var tapRelease: Runnable? = null
     private var lastMappedMoveAt = 0L
     private var lastAxesSentAt = 0L
     private var lastAxesSent = FloatArray(6)
@@ -591,7 +592,10 @@ class DeckController(private val app: Application) {
         // constant-speed scaling that made the trackpad feel slippery.
         val travel = kotlin.math.hypot(deltaX, deltaY)
         val speed = travel / padWidth.coerceAtLeast(1)
-        val gain = TRACKPAD_MIN_GAIN +
+        // While dragging, the held contact must follow the finger 1:1 or
+        // drags feel amplified. Free cursor movement uses ballistics.
+        val gain = if (trackpadContactActive) 1f
+        else TRACKPAD_MIN_GAIN +
             (TRACKPAD_MAX_GAIN - TRACKPAD_MIN_GAIN) * (speed / 1.2f).coerceIn(0f, 1f)
         mouseCursorX = (mouseCursorX + deltaX * displayW / padWidth * gain)
             .coerceIn(1f, (displayW - 2).coerceAtLeast(1).toFloat())
@@ -620,10 +624,13 @@ class DeckController(private val app: Application) {
         // and Android never draws its cursor sprite for injected mouse events.
         val x = mouseCursorX
         val y = mouseCursorY
+        // Cancel a release still pending from the previous tap: without this
+        // a fast double tap let the old release cancel the fresh press.
+        tapRelease?.let { main.removeCallbacks(it) }
         setMappedTouch(TRACKPAD_TOUCH_KEY, x, y, true)
-        main.postDelayed({
-            setMappedTouch(TRACKPAD_TOUCH_KEY, x, y, false)
-        }, 65L)
+        val release = Runnable { setMappedTouch(TRACKPAD_TOUCH_KEY, x, y, false) }
+        tapRelease = release
+        main.postDelayed(release, 65L)
     }
 
     /** Dextop-style press-and-hold: a held trackpad contact becomes a real drag. */
