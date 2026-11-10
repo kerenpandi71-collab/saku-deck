@@ -3,6 +3,7 @@ package com.saku.deck.ui
 import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -149,17 +150,18 @@ private fun TitanPortraitShell(c: DeckController, modifier: Modifier) {
         val deviceWidth = (maxWidth - 12.dp).coerceAtLeast(1.dp)
         Column(
             Modifier.width(deviceWidth)
-                .heightIn(max = maxHeight)
+                .height((maxHeight - 12.dp).coerceAtLeast(1.dp))
                 .clip(RoundedCornerShape(24.dp))
                 .background(Color(0xFF17191C))
                 .padding(horizontal = 9.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(7.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // Titan original: near-square touchscreen above the navigation strip and QWERTY deck.
-            ScreenArea(c, Modifier.fillMaxWidth().aspectRatio(1f))
+            // Give the virtual display most of the available height so it becomes a tall phone screen.
+            ScreenArea(c, Modifier.fillMaxWidth().weight(1.55f))
             TitanNavigationRow(c)
             TitanKeyboard(c)
+            TitanTrackpad(c, Modifier.fillMaxWidth().weight(0.48f))
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 5.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -170,6 +172,26 @@ private fun TitanPortraitShell(c: DeckController, modifier: Modifier) {
             }
         }
     }
+}
+
+@Composable
+private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
+    AndroidView(
+        modifier = modifier
+            .clip(RoundedCornerShape(9.dp)),
+        factory = { context ->
+            View(context).apply {
+                setBackgroundColor(android.graphics.Color.rgb(48, 53, 59))
+                isFocusable = false
+                setOnTouchListener { view, event ->
+                    c.forwardTouch(event, view.width.coerceAtLeast(1), view.height.coerceAtLeast(1))
+                }
+            }
+        },
+        update = { view ->
+            view.setBackgroundColor(android.graphics.Color.rgb(48, 53, 59))
+        },
+    )
 }
 
 @Composable
