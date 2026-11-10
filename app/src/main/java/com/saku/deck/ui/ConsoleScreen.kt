@@ -484,9 +484,14 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
         BasicTextField(
             value = value,
             onValueChange = { next ->
+                val previous = value.text
                 value = next
-                if (next.composition == null) {
-                    forwardTextDelta(sentText, next.text, c)
+                if (next.text.length < previous.length) {
+                    // Forward backspace immediately, even while the IME is composing.
+                    forwardTextDelta(previous, next.text, c, sendInserted = false)
+                    sentText = next.text
+                } else if (next.composition == null) {
+                    forwardTextDelta(sentText, next.text, c, sendInserted = true)
                     sentText = next.text
                 }
             },
@@ -514,7 +519,7 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
     }
 }
 
-private fun forwardTextDelta(previous: String, next: String, c: DeckController) {
+private fun forwardTextDelta(previous: String, next: String, c: DeckController, sendInserted: Boolean) {
     var prefix = 0
     while (prefix < previous.length && prefix < next.length && previous[prefix] == next[prefix]) prefix++
     var previousEnd = previous.length
@@ -526,5 +531,5 @@ private fun forwardTextDelta(previous: String, next: String, c: DeckController) 
     val removed = previousEnd - prefix
     if (removed > 0) c.sendBackspace(removed)
     val inserted = next.substring(prefix, nextEnd)
-    if (inserted.isNotEmpty()) c.sendText(inserted)
+    if (sendInserted && inserted.isNotEmpty()) c.sendText(inserted)
 }
