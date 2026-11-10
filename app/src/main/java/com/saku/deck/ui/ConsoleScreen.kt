@@ -392,7 +392,7 @@ private fun TitanKeyboard(c: DeckController) {
                                     awaitEachGesture {
                                         val down = awaitFirstDown(requireUnconsumed = false)
                                         down.consume()
-                                        val deleteJob = launch {
+                                        val deleteJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.currentCoroutineContext()).launch {
                                             delay(420)
                                             while (true) {
                                                 c.sendBackspace(1)
