@@ -91,7 +91,6 @@ fun ConsoleScreen(c: DeckController) {
                     "VISIBILITAS" to { c.visibilityMenuOpen = true },
                     "UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true },
                     "ATUR POSISI" to { c.beginControlLayoutEdit() },
-                    "KBD LUAR" to { c.updateExternalKeyboardOpen(!c.externalKeyboardOpen) },
                 ).forEach { (label, action) ->
                     Text(label, Modifier.clip(RoundedCornerShape(50))
                         .background(Color.Black.copy(alpha = 0.88f))
@@ -124,12 +123,6 @@ fun ConsoleScreen(c: DeckController) {
         if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
         if (c.controlSizeMenuOpen) ControlSizeDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
-        if (c.externalKeyboardOpen) {
-            ExternalKeyboardBridge(
-                c,
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth(0.82f),
-            )
-        }
         if (c.mappingMenuOpen) MappingDialog(c)
     }
 }
@@ -310,32 +303,6 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
             }
             c.message?.let { text ->
                 MessageBanner(text, Modifier.align(Alignment.BottomCenter)) { c.message = null }
-            }
-            if (c.currentApp != null && c.displayId >= 0) {
-                val mappingActive = c.mappingTargetId != null
-                Row(
-                    Modifier.align(Alignment.TopEnd).padding(7.dp),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    Text(
-                        if (c.externalKeyboardOpen) "TUTUP KBD" else "KBD LUAR",
-                        Modifier.clip(RoundedCornerShape(50))
-                            .background(if (c.externalKeyboardOpen) Deck.Accent else Color.Black.copy(alpha = 0.76f))
-                            .clickable { c.updateExternalKeyboardOpen(!c.externalKeyboardOpen) }
-                            .padding(horizontal = 9.dp, vertical = 6.dp),
-                        color = Color.White,
-                        fontSize = 9.sp,
-                    )
-                    Text(
-                        if (mappingActive) "BATAL MAP" else "MAP",
-                        Modifier.clip(RoundedCornerShape(50))
-                            .background(if (mappingActive) Color.Black.copy(alpha = 0.82f) else Deck.Accent.copy(alpha = 0.92f))
-                            .clickable { if (mappingActive) c.cancelMapping() else c.openMappingMenu() }
-                            .padding(horizontal = 11.dp, vertical = 6.dp),
-                        color = Color.White,
-                        fontSize = 10.sp,
-                    )
-                }
             }
         }
         Text(
