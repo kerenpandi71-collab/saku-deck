@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -88,6 +89,7 @@ fun ConsoleScreen(c: DeckController) {
                     (if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() },
                     "MAPPING ML" to { c.openMappingMenu() },
                     "VISIBILITAS" to { c.visibilityMenuOpen = true },
+                    "UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true },
                     "ATUR POSISI" to { c.beginControlLayoutEdit() },
                     "KBD LUAR" to { c.updateExternalKeyboardOpen(!c.externalKeyboardOpen) },
                 ).forEach { (label, action) ->
@@ -120,6 +122,7 @@ fun ConsoleScreen(c: DeckController) {
             }
         }
         if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
+        if (c.controlSizeMenuOpen) ControlSizeDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
         if (c.externalKeyboardOpen) {
             ExternalKeyboardBridge(
@@ -166,10 +169,10 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
         } else {
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val faceControls = listOf(
-                    Triple("face_x", KeyEvent.KEYCODE_BUTTON_X, Deck.ButtonX) to 65.dp,
-                    Triple("face_y", KeyEvent.KEYCODE_BUTTON_Y, Deck.ButtonY) to 65.dp,
-                    Triple("face_a", KeyEvent.KEYCODE_BUTTON_A, Deck.ButtonA) to 80.dp,
-                    Triple("face_b", KeyEvent.KEYCODE_BUTTON_B, Deck.ButtonB) to 65.dp,
+                    Triple("face_x", KeyEvent.KEYCODE_BUTTON_X, Deck.ButtonX) to c.controlSizes["face_x"]!!.dp,
+                    Triple("face_y", KeyEvent.KEYCODE_BUTTON_Y, Deck.ButtonY) to c.controlSizes["face_y"]!!.dp,
+                    Triple("face_a", KeyEvent.KEYCODE_BUTTON_A, Deck.ButtonA) to c.controlSizes["face_a"]!!.dp,
+                    Triple("face_b", KeyEvent.KEYCODE_BUTTON_B, Deck.ButtonB) to c.controlSizes["face_b"]!!.dp,
                 ).filterNot { (control, _) -> control.first in c.hiddenControls }
                 faceControls.forEach { (control, buttonSize) ->
                     val (id, keyCode, color) = control
@@ -563,4 +566,48 @@ private fun forwardTextDelta(previous: String, next: String, c: DeckController, 
     if (removed > 0) c.sendBackspace(removed)
     val inserted = next.substring(prefix, nextEnd)
     if (sendInserted && inserted.isNotEmpty()) c.sendText(inserted)
+}
+
+
+@Composable
+private fun ControlSizeDialog(c: DeckController) {
+    val controls = listOf(
+        "face_a" to "Tombol A",
+        "face_b" to "Tombol B",
+        "face_x" to "Tombol X",
+        "face_y" to "Tombol Y",
+    )
+    AlertDialog(
+        onDismissRequest = { c.controlSizeMenuOpen = false },
+        title = { Text("Ukuran tombol A / B / X / Y") },
+        text = {
+            Column(
+                Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Atur setiap tombol secara terpisah. Rentang 40–200 dp; perubahan tersimpan otomatis.",
+                    fontSize = 11.sp, color = Deck.Ink.copy(alpha = 0.72f))
+                controls.forEach { (id, label) ->
+                    val value = c.controlSizes[id] ?: 65f
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, Modifier.weight(1f), color = Deck.Ink, fontSize = 13.sp)
+                            Text("${value.toInt()} dp", color = Deck.Accent, fontSize = 12.sp)
+                        }
+                        Slider(
+                            value = value,
+                            onValueChange = { c.setControlSize(id, it) },
+                            valueRange = 40f..200f,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { c.controlSizeMenuOpen = false }) { Text("SELESAI") }
+        },
+        dismissButton = {
+            TextButton(onClick = { c.resetControlSizes() }) { Text("RESET") }
+        },
+    )
 }
