@@ -64,6 +64,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import com.saku.deck.DeckController
@@ -178,7 +180,8 @@ private fun TitanPortraitShell(c: DeckController, modifier: Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // Give the virtual display most of the available height so it becomes a tall phone screen.
+            TitanStatusStrip(c)
+            // Keep the virtual screen tall below the compact status strip.
             ScreenArea(c, Modifier.fillMaxWidth().weight(1.55f))
             TitanNavigationRow(c)
             TitanKeyboard(c)
@@ -285,6 +288,43 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
 }
 
 @Composable
+@Composable
+private fun TitanStatusStrip(c: DeckController) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var battery by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = System.currentTimeMillis()
+            val intent = context.registerReceiver(
+                null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED)
+            )
+            val level = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = intent?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100) ?: 100
+            battery = if (level >= 0 && scale > 0) level * 100 / scale else null
+            c.refreshVirtualFps()
+            delay(1000)
+        }
+    }
+    val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(now))
+    val date = java.text.SimpleDateFormat("EEE, dd MMM", java.util.Locale.getDefault()).format(java.util.Date(now))
+    Row(
+        Modifier.fillMaxWidth().height(30.dp).clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF25292E)).padding(horizontal = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(clock, color = Color.White, fontSize = 11.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            Text(date, color = Color(0xFFB9C0C8), fontSize = 9.sp)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(battery?.let { "BAT $it%" } ?: "BAT --", color = Color(0xFFDDE2E7), fontSize = 9.sp)
+            Text(c.virtualFps?.let { "$it FPS" } ?: "-- FPS", color = Color(0xFFB9D8FF), fontSize = 9.sp)
+        }
+    }
+}
+
 private fun TitanNavigationRow(c: DeckController) {
     // Keep only the two navigation controls requested: Back and Home.
     Row(
@@ -346,23 +386,48 @@ private fun TitanKeyboard(c: DeckController) {
                         Modifier.weight(if (wide) 1.35f else 1f).height(34.dp)
                             .clip(RoundedCornerShape(4.dp))
                             .background(Color(0xFF454A50))
-                            .clickable {
-                                when (key) {
-                                    "⇧" -> shifted = !shifted
-                                    "⌫" -> {
-                                        c.sendKey(KeyEvent.KEYCODE_DEL, true)
-                                        c.sendKey(KeyEvent.KEYCODE_DEL, false)
-                                    }
-                                    else -> {
-                                        val output = when {
-                                            symbols && shifted -> shiftedSymbols[key] ?: key
-                                            symbols -> key
-                                            shifted -> key
-                                            else -> key.lowercase()
+                            .pointerInput(key, symbols, shifted) {
+                                if (key == "⌫") {
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(requireUnconsumed = false)
+                                        down.consume()
+                                        val deleteJob = launch {
+                                            delay(420)
+                                            while (true) {
+                                                c.sendBackspace(1)
+                                                delay(65)
+                                            }
                                         }
-                                        c.sendText(output)
-                                        if (shifted) shifted = false
+                                        var released = false
+                                        try {
+                                            while (!released) {
+                                                val event = awaitPointerEvent()
+                                                val change = event.changes.firstOrNull { it.id == down.id }
+                                                if (change == null || !change.pressed) released = true
+                                                event.changes.forEach { it.consume() }
+                                            }
+                                        } finally {
+                                            val held = android.os.SystemClock.uptimeMillis() - down.uptimeMillis
+                                            deleteJob.cancel()
+                                            if (held < 420L) c.sendBackspace(1)
+                                        }
                                     }
+                                } else {
+                                    detectTapGestures(onTap = {
+                                        when (key) {
+                                            "⇧" -> shifted = !shifted
+                                            else -> {
+                                                val output = when {
+                                                    symbols && shifted -> shiftedSymbols[key] ?: key
+                                                    symbols -> key
+                                                    shifted -> key
+                                                    else -> key.lowercase()
+                                                }
+                                                c.sendText(output)
+                                                if (shifted) shifted = false
+                                            }
+                                        }
+                                    })
                                 }
                             },
                         contentAlignment = Alignment.Center,
@@ -849,16 +914,10 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
         BasicTextField(
             value = value,
             onValueChange = { next ->
+                // Compose locally first. Gboard owns composition, autocorrect,
+                // selection and cursor movement; nothing reaches the virtual app
+                // until the user explicitly taps SEND.
                 value = next
-                // Mirror composing updates as well as committed text. Each update
-                // replaces the previous proxy text on the virtual display, so
-                // Gboard's live composition, correction and final commit stay in sync.
-                // The host EditText remains the IME target; only the resulting key
-                // sequence is forwarded to the app running on the virtual display.
-                if (next.text != sentText) {
-                    forwardTextDelta(sentText, next.text, c, sendInserted = true)
-                    sentText = next.text
-                }
             },
             modifier = Modifier.weight(1f).heightIn(min = 34.dp).focusRequester(focusRequester),
             textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
@@ -871,6 +930,18 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
                     innerTextField()
                 }
             },
+        )
+        Text(
+            "KIRIM",
+            Modifier.clip(RoundedCornerShape(8.dp)).background(Deck.Accent)
+                .clickable {
+                    val payload = value.text
+                    if (payload.isNotEmpty() && c.sendText(payload)) {
+                        value = TextFieldValue()
+                        sentText = ""
+                    }
+                }.padding(horizontal = 11.dp, vertical = 8.dp),
+            color = Color.White, fontSize = 10.sp,
         )
         Text(
             "TUTUP",
