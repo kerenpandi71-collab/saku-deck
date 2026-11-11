@@ -293,7 +293,7 @@ fun MappingDialog(c: DeckController) {
 }
 
 @Composable
-private fun AppIcon(entry: AppEntry) {
+fun AppIcon(entry: AppEntry) {
     val ctx = LocalContext.current
     val icon by produceState<ImageBitmap?>(null, entry.component) {
         value = withContext(Dispatchers.IO) {
