@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +65,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.positionChange
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -349,6 +352,7 @@ private fun TitanNavigationRow(c: DeckController) {
 
 @Composable
 private fun TitanKeyboard(c: DeckController) {
+    val repeatScope = rememberCoroutineScope()
     val letterRows = listOf(
         listOf("Q","W","E","R","T","Y","U","I","O","P"),
         listOf("A","S","D","F","G","H","J","K","L"),
@@ -386,11 +390,10 @@ private fun TitanKeyboard(c: DeckController) {
                             .clip(RoundedCornerShape(4.dp))
                             .background(Color(0xFF454A50))
                             .pointerInput(key, symbols, shifted) {
-                                val pointerScope = this
                                 if (key == "⌫") {
                                     detectTapGestures(onPress = {
                                         val startedAt = android.os.SystemClock.uptimeMillis()
-                                        val deleteJob = pointerScope.launch {
+                                        val deleteJob = repeatScope.launch {
                                             delay(420)
                                             while (true) {
                                                 c.sendBackspace(1)
