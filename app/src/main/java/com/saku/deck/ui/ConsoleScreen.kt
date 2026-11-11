@@ -129,7 +129,13 @@ fun ConsoleScreen(c: DeckController) {
                     "VISIBILITAS" to { c.visibilityMenuOpen = true },
                     "UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true },
                     "ATUR POSISI" to { c.beginControlLayoutEdit() },
-                    "KELUAR DARI SAKU DECK" to { hostActivity?.finish() },
+                    "KELUAR DARI SAKU DECK" to {
+                        hostActivity?.let { activity ->
+                            // Finish only after the virtual display is released,
+                            // navigation flags are restored and Shizuku is unbound.
+                            c.shutdown { activity.finish() }
+                        }
+                    },
                 ).forEach { (label, action) ->
                     Text(label, Modifier.clip(RoundedCornerShape(50))
                         .background(Color.Black.copy(alpha = 0.88f))
