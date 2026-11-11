@@ -1023,7 +1023,25 @@ class DeckController(private val app: Application) {
 
     /** Sends Back only for an explicit navigation control, never for text-key input. */
     fun sendNavigationBack(down: Boolean) {
-        sendKeyInternal(KeyEvent.KEYCODE_BACK, down)
+        if (!down) {
+            sendKeyInternal(KeyEvent.KEYCODE_BACK, false)
+            worker.execute {
+                Thread.sleep(420)
+                val svc = service ?: return@execute
+                val targetDisplay = displayId
+                if (targetDisplay < 0) return@execute
+                val active = runCatching { svc.getOpenTasks(targetDisplay) }.getOrDefault("")
+                if (active.isBlank()) main.post {
+                    if (displayId == targetDisplay && service === svc) {
+                        currentApp = null
+                        pickerOpen = true
+                        recentsOpen = false
+                    }
+                }
+            }
+            return
+        }
+        sendKeyInternal(KeyEvent.KEYCODE_BACK, true)
     }
 
     private fun sendKeyInternal(keyCode: Int, down: Boolean) {
