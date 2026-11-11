@@ -131,6 +131,9 @@ fun ConsoleScreen(c: DeckController) {
         }
         val density = androidx.compose.ui.platform.LocalDensity.current
         val bubbleSizePx = with(density) { 48.dp.toPx() }
+        // Capture BoxWithConstraints dimensions before entering PointerInputScope.
+        val rootWidthPx = constraints.maxWidth.toFloat()
+        val rootHeightPx = constraints.maxHeight.toFloat()
         val initialBubble = Offset(
             (constraints.maxWidth.toFloat() - bubbleSizePx - with(density) { 14.dp.toPx() }).coerceAtLeast(0f),
             (constraints.maxHeight.toFloat() - bubbleSizePx - with(density) { 18.dp.toPx() }).coerceAtLeast(0f),
@@ -183,11 +186,11 @@ fun ConsoleScreen(c: DeckController) {
                 Box(
                     Modifier.size(48.dp).shadow(6.dp, CircleShape).clip(CircleShape)
                         .background(Deck.Accent)
-                        .pointerInput(constraints.maxWidth, constraints.maxHeight) {
+                        .pointerInput(rootWidthPx, rootHeightPx) {
                             detectDragGestures(
                                 onDragEnd = {
-                                    val maxX = (constraints.maxWidth.toFloat() - size.width).coerceAtLeast(0f)
-                                    val maxY = (constraints.maxHeight.toFloat() - size.height).coerceAtLeast(0f)
+                                    val maxX = (rootWidthPx - size.width).coerceAtLeast(0f)
+                                    val maxY = (rootHeightPx - size.height).coerceAtLeast(0f)
                                     assistantOffset = Offset(
                                         assistantOffset.x.coerceIn(0f, maxX),
                                         assistantOffset.y.coerceIn(0f, maxY),
@@ -195,8 +198,8 @@ fun ConsoleScreen(c: DeckController) {
                                 },
                             ) { change, drag ->
                                 change.consume()
-                                val maxX = (constraints.maxWidth.toFloat() - size.width).coerceAtLeast(0f)
-                                val maxY = (constraints.maxHeight.toFloat() - size.height).coerceAtLeast(0f)
+                                val maxX = (rootWidthPx - size.width).coerceAtLeast(0f)
+                                val maxY = (rootHeightPx - size.height).coerceAtLeast(0f)
                                 assistantOffset = Offset(
                                     (assistantOffset.x + drag.x).coerceIn(0f, maxX),
                                     (assistantOffset.y + drag.y).coerceIn(0f, maxY),
