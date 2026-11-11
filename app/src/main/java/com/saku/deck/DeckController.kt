@@ -601,6 +601,7 @@ class DeckController(private val app: Application) {
                 val activity = component.substringAfter('/').substringAfterLast('.')
                 RecentTaskEntry(taskId, resolveRecentTaskLabel(component), component)
             }.distinctBy { it.taskId }
+                .toList()
             main.post {
                 if (displayId != targetDisplay || service !== svc) return@post
                 recentTasks = entries
