@@ -24,6 +24,8 @@ class DeckUserService : IDeckService.Stub() {
     private val lock = Any()
     private var callback: Any? = null
     private var displayId = -1
+    private var navigationToken: Binder? = null
+    private val navigationPackage = "com.saku.deck"
     private var lastInputError = "Belum ada event input yang diuji."
     private var lastInputLogAt = 0L
 
@@ -107,6 +109,34 @@ class DeckUserService : IDeckService.Stub() {
         }.onFailure { Log.w("SakuDeck", "Virtual display IME hide policy unavailable", unwrap(it)) }
     }
 
+    // ---- Android navigation guard (MagicDesk-style) ------------------------
+
+    /**
+     * Disable Home and Overview through SystemUI, not by hiding this Activity
+     * from Recents. The Binder token is owned by this UserService: SystemUI
+     * automatically drops the flags if the helper process dies.
+     */
+    private fun setNavigationGuard(enabled: Boolean) {
+        val statusBar = asInterface(
+            STATUS_BAR_SERVICE,
+            systemService("statusbar")
+        )
+        val method = statusBar.javaClass.methods.firstOrNull {
+            it.name == "disableForUser" && it.parameterTypes.size == 4
+        } ?: throw NoSuchMethodException("IStatusBarService.disableForUser(int, IBinder, String, int)")
+
+        val token = navigationToken ?: Binder().also { navigationToken = it }
+        val flags = if (enabled) DISABLE_HOME or DISABLE_RECENT else 0
+        try {
+            method.invoke(statusBar, flags, token, navigationPackage, Process.myUid() / 100000)
+            if (!enabled) navigationToken = null
+            Log.i("SakuDeckNavigation", if (enabled) "Home/Overview disabled for deck session" else "Home/Overview restored")
+        } catch (t: Throwable) {
+            if (enabled) navigationToken = null
+            throw unwrap(t)
+        }
+    }
+
     // ---- display ------------------------------------------------------------
 
     override fun createDisplay(args: Bundle): Bundle {
@@ -135,6 +165,8 @@ class DeckUserService : IDeckService.Stub() {
                             callback = cb
                             displayId = id
                             applyImeHidePolicy(id)
+                            runCatching { setNavigationGuard(true) }
+                                .onFailure { Log.w("SakuDeckNavigation", "Home/Overview guard unavailable", unwrap(it)) }
                             out.putInt("displayId", id)
                             out.putInt("flags", flags)
                             return out
@@ -194,6 +226,9 @@ class DeckUserService : IDeckService.Stub() {
     }
 
     private fun releaseLocked() {
+        // Always restore navigation before releasing the virtual display.
+        runCatching { setNavigationGuard(false) }
+            .onFailure { Log.w("SakuDeckNavigation", "Navigation restore failed", unwrap(it)) }
         val cb = callback ?: run {
             displayId = -1
             return
@@ -279,6 +314,9 @@ class DeckUserService : IDeckService.Stub() {
         private const val DISPLAY_CALLBACK = "android.hardware.display.IVirtualDisplayCallback"
         private const val INPUT_MANAGER = "android.hardware.input.IInputManager"
         private const val WINDOW_MANAGER = "android.view.IWindowManager"
+        private const val STATUS_BAR_SERVICE = "com.android.internal.statusbar.IStatusBarService"
+        private const val DISABLE_HOME = 0x00200000
+        private const val DISABLE_RECENT = 0x01000000
 
         // DisplayManager virtual display flags (some are hidden in the SDK).
         private const val PUBLIC = 1
