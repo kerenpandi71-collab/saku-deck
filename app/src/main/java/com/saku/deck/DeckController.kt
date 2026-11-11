@@ -23,11 +23,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.saku.deck.service.DeckUserService
 import rikka.shizuku.Shizuku
+import java.io.File
 import java.util.concurrent.Executors
 
 enum class ShizukuState { NOT_INSTALLED, NOT_RUNNING, NO_PERMISSION, CONNECTING, READY }
 
 data class AppEntry(val label: String, val packageName: String, val component: String)
+
+data class RecentTask(val taskId: Int, val stackId: Int, val component: String, val label: String)
 
 data class TouchMapping(
     val id: String,
@@ -50,6 +53,11 @@ class DeckController(private val app: Application) {
     var currentApp by mutableStateOf<AppEntry?>(null)
         private set
     var pickerOpen by mutableStateOf(true)
+    var recentsOpen by mutableStateOf(false)
+        private set
+    var recentTasks by mutableStateOf<List<RecentTask>>(emptyList())
+        private set
+    var logDialogOpen by mutableStateOf(false)
     var message by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
         private set
@@ -139,6 +147,8 @@ class DeckController(private val app: Application) {
                 displayId = -1
                 currentApp = null
                 pickerOpen = true
+                recentsOpen = false
+                recentTasks = emptyList()
                 refresh()
             }
         }
@@ -324,6 +334,8 @@ class DeckController(private val app: Application) {
         displayH = 0
         currentApp = null
         pickerOpen = true
+        recentsOpen = false
+        recentTasks = emptyList()
         busy = false
         keyDownTimes.clear()
 
@@ -399,6 +411,78 @@ class DeckController(private val app: Application) {
             }
         }
     }
+
+    // ---- in-deck recents ----------------------------------------------------
+
+    fun toggleRecents() {
+        if (recentsOpen) {
+            recentsOpen = false
+            return
+        }
+        recentsOpen = true
+        refreshRecents()
+    }
+
+    fun refreshRecents() {
+        val svc = service
+        val id = displayId
+        if (svc == null || id < 0) {
+            message = "Layar virtual belum aktif."
+            return
+        }
+        worker.execute {
+            val out = runCatching { svc.runShell("am stack list") }.getOrElse { "" }
+            val tasks = parseRecentTasks(out, id)
+            main.post {
+                recentTasks = tasks
+                if (tasks.isEmpty()) message = "Tidak ada aplikasi terbuka di layar virtual."
+            }
+        }
+    }
+
+    fun switchToTask(task: RecentTask) {
+        val svc = service ?: return
+        val id = displayId
+        if (id < 0) return
+        recentsOpen = false
+        worker.execute {
+            val out = runCatching { svc.runShell("am stack movetask ${task.taskId} ${task.stackId} true") }
+                .getOrElse { "Error: $it" }
+            if (out.contains("Error", true) || out.contains("Exception", true) ||
+                out.contains("does not exist", true)
+            ) {
+                runCatching { svc.launchApp(task.component, id) }
+            }
+        }
+    }
+
+    private fun parseRecentTasks(out: String, displayId: Int): List<RecentTask> {
+        val tasks = LinkedHashMap<Int, RecentTask>()
+        var currentDisplay = -1
+        var currentStack = -1
+        var pendingTaskId = -1
+        out.lines().forEach { line ->
+            Regex("displayId=(\\d+)").find(line)?.let { currentDisplay = it.groupValues[1].toInt() }
+            Regex("stackId=(\\d+)").find(line)?.let { currentStack = it.groupValues[1].toInt() }
+            Regex("taskId=(\\d+)").find(line)?.let { pendingTaskId = it.groupValues[1].toInt() }
+            Regex("cmp=([\\w.$]+/[\\w.$]+)").find(line)?.let { match ->
+                val taskId = pendingTaskId
+                pendingTaskId = -1
+                if (taskId >= 0 && currentDisplay == displayId && !tasks.containsKey(taskId)) {
+                    val component = match.groupValues[1]
+                    if (!component.startsWith("${app.packageName}/")) {
+                        tasks[taskId] = RecentTask(taskId, currentStack, component, labelFor(component))
+                    }
+                }
+            }
+        }
+        return tasks.values.toList().take(10)
+    }
+
+    private fun labelFor(component: String): String = runCatching {
+        val pm = app.packageManager
+        pm.getActivityInfo(ComponentName.unflattenFromString(component), 0).loadLabel(pm).toString()
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: component.substringBefore("/")
 
     // ---- Mobile Legends touch mapping --------------------------------------
 
@@ -518,6 +602,16 @@ class DeckController(private val app: Application) {
 
     fun updateExternalKeyboardOpen(open: Boolean) {
         externalKeyboardOpen = open
+    }
+
+    private val logFile by lazy { File(app.filesDir, "saku_log.txt") }
+
+    fun errorLog(): String = runCatching {
+        logFile.takeIf { it.exists() }?.readText()
+    }.getOrNull()?.trim().takeIf { !it.isNullOrEmpty() } ?: "Belum ada log error."
+
+    fun clearErrorLog() {
+        runCatching { logFile.delete() }
     }
 
     fun toggleGamepadHidden() {
@@ -829,6 +923,10 @@ class DeckController(private val app: Application) {
 
     /** Returns true when the back press was used by the deck. */
     fun handleBack(): Boolean {
+        if (recentsOpen) {
+            recentsOpen = false
+            return true
+        }
         if (pickerOpen && currentApp != null) {
             pickerOpen = false
             return true

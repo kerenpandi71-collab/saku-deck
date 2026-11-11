@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.saku.deck.AppEntry
 import com.saku.deck.DeckController
+import com.saku.deck.RecentTask
 import com.saku.deck.ShizukuState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -238,6 +239,109 @@ fun AppPicker(c: DeckController) {
                 }
             }
         }
+    }
+}
+
+@Composable
+fun RecentsPanel(c: DeckController) {
+    Column(Modifier.fillMaxSize().sakuWallpaper()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Color.White.copy(alpha = 0.55f))
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Aplikasi terbaru", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Deck.Ink)
+            Spacer(Modifier.weight(1f))
+            Text(
+                "SEGARKAN",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Deck.Ink.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .clickable { c.refreshRecents() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+            Text(
+                "TUTUP",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Deck.Accent,
+                modifier = Modifier
+                    .padding(start = 10.dp)
+                    .clip(RoundedCornerShape(50))
+                    .clickable { c.toggleRecents() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+        val tasks = c.recentTasks
+        if (tasks.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "Tidak ada aplikasi terbuka di layar virtual.",
+                    color = Deck.Ink,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(24.dp),
+                )
+            }
+        } else {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                tasks.forEach { task -> RecentRow(c, task) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentRow(c: DeckController, task: RecentTask) {
+    val ctx = LocalContext.current
+    val icon by produceState<ImageBitmap?>(null, task.component) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                val cn = ComponentName.unflattenFromString(task.component)!!
+                ctx.packageManager.getActivityIcon(cn).toBitmap(128, 128).asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.72f))
+            .clickable { c.switchToTask(task) }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val bmp = icon
+        if (bmp != null) {
+            Image(bmp, contentDescription = task.label, modifier = Modifier.size(40.dp))
+        } else {
+            Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(Deck.BodyShade))
+        }
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(
+                task.label,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Deck.Ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                task.component,
+                fontSize = 10.sp,
+                color = Deck.Ink.copy(alpha = 0.6f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text("BUKA", color = Deck.Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
     }
 }
 
