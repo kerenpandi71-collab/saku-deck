@@ -31,6 +31,8 @@ enum class ShizukuState { NOT_INSTALLED, NOT_RUNNING, NO_PERMISSION, CONNECTING,
 
 data class AppEntry(val label: String, val packageName: String, val component: String)
 
+data class RecentTaskEntry(val taskId: Int, val label: String, val component: String)
+
 data class TouchMapping(
     val id: String,
     val label: String,
@@ -50,6 +52,9 @@ class DeckController(private val app: Application) {
     var displayId by mutableIntStateOf(-1)
         private set
     var currentApp by mutableStateOf<AppEntry?>(null)
+    var recentTasks by mutableStateOf<List<RecentTaskEntry>>(emptyList())
+        private set
+    var recentsOpen by mutableStateOf(false)
         private set
     var pickerOpen by mutableStateOf(true)
     var message by mutableStateOf<String?>(null)
@@ -576,7 +581,74 @@ class DeckController(private val app: Application) {
     // ---- apps ---------------------------------------------------------------
 
     fun openPicker() {
+        recentsOpen = false
         pickerOpen = true
+    }
+
+    fun openRecentTasks() {
+        val svc = service ?: return
+        val targetDisplay = displayId
+        if (targetDisplay < 0) return
+        worker.execute {
+            val raw = runCatching { svc.getOpenTasks(targetDisplay) }.getOrDefault("")
+            val entries = raw.lineSequence().mapNotNull { line ->
+                val parts = line.split(" • ")
+                val taskId = parts.firstOrNull()?.removePrefix("taskId=")?.toIntOrNull()
+                    ?: return@mapNotNull null
+                val component = parts.getOrNull(1) ?: return@mapNotNull null
+                val activity = component.substringAfter('/').substringAfterLast('.')
+                RecentTaskEntry(taskId, activity, component)
+            }.distinctBy { it.taskId }
+            main.post {
+                if (displayId != targetDisplay || service !== svc) return@post
+                recentTasks = entries
+                recentsOpen = true
+                pickerOpen = false
+                if (entries.isEmpty()) message = "Belum ada aplikasi terbuka pada virtual display."
+            }
+        }
+    }
+
+    fun focusRecentTask(entry: RecentTaskEntry) {
+        val svc = service ?: return
+        val targetDisplay = displayId
+        if (targetDisplay < 0) return
+        worker.execute {
+            val result = runCatching { svc.focusOpenTask(targetDisplay, entry.taskId) }
+                .getOrElse { "Gagal memfokuskan aplikasi: ${it.message}" }
+            main.post {
+                if (displayId != targetDisplay || service !== svc) return@post
+                recentsOpen = false
+                message = result
+            }
+        }
+    }
+
+    fun closeRecentTask(entry: RecentTaskEntry) {
+        val svc = service ?: return
+        val targetDisplay = displayId
+        if (targetDisplay < 0) return
+        worker.execute {
+            val result = runCatching { svc.closeOpenTask(targetDisplay, entry.taskId) }
+                .getOrElse { "Gagal menutup aplikasi: ${it.message}" }
+            val refreshed = runCatching { svc.getOpenTasks(targetDisplay) }.getOrDefault("")
+            val entries = refreshed.lineSequence().mapNotNull { line ->
+                val parts = line.split(" • ")
+                val taskId = parts.firstOrNull()?.removePrefix("taskId=")?.toIntOrNull()
+                    ?: return@mapNotNull null
+                val component = parts.getOrNull(1) ?: return@mapNotNull null
+                RecentTaskEntry(taskId, component.substringAfter('/').substringAfterLast('.'), component)
+            }.distinctBy { it.taskId }
+            main.post {
+                if (displayId != targetDisplay || service !== svc) return@post
+                recentTasks = entries
+                message = result
+            }
+        }
+    }
+
+    fun closeRecentTasks() {
+        recentsOpen = false
     }
 
     fun closePicker() {
