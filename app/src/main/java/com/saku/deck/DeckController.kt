@@ -52,7 +52,7 @@ class DeckController(private val app: Application) {
     var displayId by mutableIntStateOf(-1)
         private set
     var currentApp by mutableStateOf<AppEntry?>(null)
-    var recentTasks by mutableStateOf<List<RecentTaskEntry>>(emptyList())
+    var recentTasks by mutableStateOf<List<RecentTaskEntry>>(loadRecentApps())
         private set
     var recentsOpen by mutableStateOf(false)
         private set
@@ -988,7 +988,9 @@ class DeckController(private val app: Application) {
     fun sendKey(keyCode: Int, down: Boolean) {
         // Generic keyboard/gamepad input must never trigger system navigation.
         // Back is sent only through the dedicated navigation action below.
-        if (keyCode == KeyEvent.KEYCODE_APP_SWITCH || keyCode == KeyEvent.KEYCODE_BACK) return
+        if (keyCode == KeyEvent.KEYCODE_APP_SWITCH || keyCode == KeyEvent.KEYCODE_BACK ||
+            keyCode == KeyEvent.KEYCODE_HOME || keyCode == KeyEvent.KEYCODE_MENU ||
+            keyCode == KeyEvent.KEYCODE_ESCAPE) return
         sendKeyInternal(keyCode, down)
     }
 
@@ -1037,6 +1039,7 @@ class DeckController(private val app: Application) {
 
     /** Sends standard desktop editing shortcuts to the focused editor on the virtual display. */
     fun sendShortcut(keyCode: Int) {
+        if (keyCode !in setOf(KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_V)) return
         val svc = service ?: return
         val id = displayId
         if (id < 0) return
@@ -1088,7 +1091,10 @@ class DeckController(private val app: Application) {
         // keys even if a platform KeyCharacterMap returns an unexpected event.
         events.filterNot {
             it.keyCode == KeyEvent.KEYCODE_BACK ||
-                it.keyCode == KeyEvent.KEYCODE_APP_SWITCH
+                it.keyCode == KeyEvent.KEYCODE_APP_SWITCH ||
+                it.keyCode == KeyEvent.KEYCODE_HOME ||
+                it.keyCode == KeyEvent.KEYCODE_MENU ||
+                it.keyCode == KeyEvent.KEYCODE_ESCAPE
         }.forEach { inject(svc, it, id) }
         return true
     }
@@ -1354,6 +1360,8 @@ class DeckController(private val app: Application) {
             "face_y" to 65f,
         )
         private const val CONTROL_VISIBILITY_PREFS = "control_visibility"
+        private const val RECENT_APPS_PREFS = "saku_deck_recent_apps"
+        private const val RECENT_APPS_KEY = "components"
         // Virtual display density relative to the phone, so apps fit the smaller center screen.
         private const val DPI_SCALE = 0.75f
         private val DEFAULT_TOUCH_MAPPINGS = listOf(
