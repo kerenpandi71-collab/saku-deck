@@ -321,7 +321,7 @@ private fun TitanStatusStrip(c: DeckController) {
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(battery?.let { "BAT $it%" } ?: "BAT --", color = Color(0xFFDDE2E7), fontSize = 9.sp)
-            Text(c.virtualFps?.let { "$it FPS" } ?: "-- FPS", color = Color(0xFFB9D8FF), fontSize = 9.sp)
+            Text(c.virtualFps.takeIf { it > 0 }?.let { "$it FPS" } ?: "-- FPS", color = Color(0xFFB9D8FF), fontSize = 9.sp)
         }
     }
 }
