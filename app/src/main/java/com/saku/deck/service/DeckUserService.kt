@@ -150,7 +150,7 @@ class DeckUserService : IDeckService.Stub() {
                 disable != null -> disable.invoke(statusBar, flags, token, navigationPackage)
                 disableForUser != null -> disableForUser.invoke(
                     statusBar, flags, token, navigationPackage,
-                    android.os.UserHandle.getUserId(android.os.Process.myUid())
+                    android.os.Process.myUid() / 100000
                 )
                 else -> throw NoSuchMethodException("IStatusBarService.disable/disableForUser")
             }
