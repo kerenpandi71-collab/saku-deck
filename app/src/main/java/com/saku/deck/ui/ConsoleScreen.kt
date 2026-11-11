@@ -180,7 +180,6 @@ fun ConsoleScreen(c: DeckController) {
             )
         }
         if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
-        if (c.recentsOpen) RecentTasksDialog(c)
         if (c.controlSizeMenuOpen) ControlSizeDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
         if (c.mappingMenuOpen) MappingDialog(c)
@@ -764,6 +763,7 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
                 c.displayId < 0 -> LoadingPanel(c)
                 c.pickerOpen -> AppPicker(c)
             }
+            if (c.recentsOpen) RecentTasksDialog(c)
             c.message?.let { text ->
                 MessageBanner(text, Modifier.align(Alignment.BottomCenter)) { c.message = null }
             }
