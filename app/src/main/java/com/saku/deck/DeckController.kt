@@ -280,8 +280,8 @@ class DeckController(private val app: Application) {
     }
 
     fun setLandscapeFrameSize(width: Float, height: Float) {
-        landscapeFrameWidth = width.coerceIn(1f, 1.15f)
-        landscapeFrameHeight = height.coerceIn(0.75f, 1f)
+        landscapeFrameWidth = width.coerceIn(1f, 1.3f)
+        landscapeFrameHeight = height.coerceIn(0.65f, 1f)
         app.getSharedPreferences(LANDSCAPE_FRAME_PREFS, Context.MODE_PRIVATE).edit()
             .putFloat("width", landscapeFrameWidth)
             .putFloat("height", landscapeFrameHeight)
@@ -290,11 +290,11 @@ class DeckController(private val app: Application) {
 
     private fun loadLandscapeFrameWidth(): Float =
         app.getSharedPreferences(LANDSCAPE_FRAME_PREFS, Context.MODE_PRIVATE)
-            .getFloat("width", 1f).coerceIn(1f, 1.15f)
+            .getFloat("width", 1f).coerceIn(1f, 1.3f)
 
     private fun loadLandscapeFrameHeight(): Float =
         app.getSharedPreferences(LANDSCAPE_FRAME_PREFS, Context.MODE_PRIVATE)
-            .getFloat("height", 1f).coerceIn(0.75f, 1f)
+            .getFloat("height", 1f).coerceIn(0.65f, 1f)
 
 
     private fun loadPerformanceMode(): Boolean =
