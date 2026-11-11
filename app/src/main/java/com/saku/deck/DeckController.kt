@@ -889,8 +889,19 @@ class DeckController(private val app: Application) {
     // ---- input --------------------------------------------------------------
 
     fun sendKey(keyCode: Int, down: Boolean) {
+        // Generic keyboard/gamepad input must never trigger system navigation.
+        // Back is sent only through the dedicated navigation action below.
+        if (keyCode == KeyEvent.KEYCODE_APP_SWITCH || keyCode == KeyEvent.KEYCODE_BACK) return
+        sendKeyInternal(keyCode, down)
+    }
+
+    /** Sends Back only for an explicit navigation control, never for text-key input. */
+    fun sendNavigationBack(down: Boolean) {
+        sendKeyInternal(KeyEvent.KEYCODE_BACK, down)
+    }
+
+    private fun sendKeyInternal(keyCode: Int, down: Boolean) {
         // Overview is disabled for the duration of the Deck session.
-        // Never forward an App Switch key into the virtual display as a fallback.
         if (keyCode == KeyEvent.KEYCODE_APP_SWITCH) return
         val svc = service ?: return
         val id = displayId
@@ -976,7 +987,12 @@ class DeckController(private val app: Application) {
             message = "Karakter ini tidak didukung oleh keyboard virtual. Coba huruf, angka, atau tanda baca umum."
             return false
         }
-        events.forEach { inject(svc, it, id) }
+        // Character mapping is text-only. Defensively reject navigation/system
+        // keys even if a platform KeyCharacterMap returns an unexpected event.
+        events.filterNot {
+            it.keyCode == KeyEvent.KEYCODE_BACK ||
+                it.keyCode == KeyEvent.KEYCODE_APP_SWITCH
+        }.forEach { inject(svc, it, id) }
         return true
     }
 
@@ -1206,9 +1222,12 @@ class DeckController(private val app: Application) {
             pickerOpen = false
             return true
         }
-        if (!pickerOpen && displayId >= 0) {
-            sendKey(KeyEvent.KEYCODE_BACK, true)
-            sendKey(KeyEvent.KEYCODE_BACK, false)
+        // Titan portrait has its own on-screen Back control. Ignore host/system
+        // Back dispatch here so a keyboard interaction cannot be interpreted as
+        // navigation; the explicit Titan Back button uses sendNavigationBack().
+        if (!pickerOpen && displayId >= 0 && !titanPortraitMode) {
+            sendNavigationBack(true)
+            sendNavigationBack(false)
         }
         // Keep the host deck in the foreground. Exiting is an explicit action
         // from the assistant bubble, not an accidental Android Back press.
