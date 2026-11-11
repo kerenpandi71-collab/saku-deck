@@ -117,15 +117,27 @@ class DeckUserService : IDeckService.Stub() {
      * automatically drops the flags if the helper process dies.
      */
     private fun setNavigationGuard(enabled: Boolean) {
-        val statusBar = asInterface(STATUS_BAR_SERVICE, systemService("statusbar"))
-        val token = navigationToken ?: Binder().also { navigationToken = it }
-        val flags = if (enabled) DISABLE_HOME or DISABLE_RECENT else 0
-        val userId = android.os.Process.myUid() / 100000
+        // Do not allocate a token during teardown when no guard was enabled.
+        val token = navigationToken ?: if (enabled) {
+            Binder().also { navigationToken = it }
+        } else {
+            return
+        }
+
         try {
-            // Shizuku UserService executes as shell (uid 2000), not as the app.
-            // SystemUI validates the package attribution against the caller UID.
-            val attributedPackage = navigationPackage
+            val statusBar = asInterface(STATUS_BAR_SERVICE, systemService("statusbar"))
+            val flags = if (enabled) DISABLE_HOME or DISABLE_RECENT else 0
             val methods = statusBar.javaClass.methods
+
+            // Prefer the same IStatusBarService.disable(flags, token, package)
+            // transaction used by MagicDesk. Fall back to the per-user variant
+            // only on ROMs that do not expose the three-argument method.
+            val disable = methods.firstOrNull {
+                it.name == "disable" && it.parameterTypes.size == 3 &&
+                    it.parameterTypes[0] == Int::class.javaPrimitiveType &&
+                    IBinder::class.java.isAssignableFrom(it.parameterTypes[1]) &&
+                    it.parameterTypes[2] == String::class.java
+            }
             val disableForUser = methods.firstOrNull {
                 it.name == "disableForUser" && it.parameterTypes.size == 4 &&
                     it.parameterTypes[0] == Int::class.javaPrimitiveType &&
@@ -133,28 +145,24 @@ class DeckUserService : IDeckService.Stub() {
                     it.parameterTypes[2] == String::class.java &&
                     it.parameterTypes[3] == Int::class.javaPrimitiveType
             }
-            val disable = methods.firstOrNull {
-                it.name == "disable" && it.parameterTypes.size == 3 &&
-                    it.parameterTypes[0] == Int::class.javaPrimitiveType &&
-                    IBinder::class.java.isAssignableFrom(it.parameterTypes[1]) &&
-                    it.parameterTypes[2] == String::class.java
-            }
-            if (disableForUser == null && disable == null) {
-                throw NoSuchMethodException("IStatusBarService.disable/disableForUser")
+
+            when {
+                disable != null -> disable.invoke(statusBar, flags, token, navigationPackage)
+                disableForUser != null -> disableForUser.invoke(
+                    statusBar, flags, token, navigationPackage,
+                    android.os.UserHandle.getUserId(android.os.Process.myUid())
+                )
+                else -> throw NoSuchMethodException("IStatusBarService.disable/disableForUser")
             }
 
-            // Use the per-user transaction and also the original MagicDesk-style
-            // transaction. Both share the same token, so release clears both.
-            if (disableForUser != null) {
-                disableForUser.invoke(statusBar, flags, token, attributedPackage, userId)
-            }
-            if (disable != null) {
-                disable.invoke(statusBar, flags, token, attributedPackage)
-            }
             if (!enabled) navigationToken = null
-            Log.i("SakuDeckNavigation", if (enabled) "Home/Overview disabled for deck session" else "Home/Overview restored")
+            Log.i(
+                "SakuDeckNavigation",
+                if (enabled) "Android Overview blocked for active Deck session"
+                else "Android Overview restored after Deck session"
+            )
         } catch (t: Throwable) {
-            if (enabled) navigationToken = null
+            // Keep the token after a failed release so releaseLocked() can retry.
             throw unwrap(t)
         }
     }
