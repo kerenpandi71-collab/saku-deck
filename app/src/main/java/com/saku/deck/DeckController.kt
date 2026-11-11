@@ -149,16 +149,18 @@ class DeckController(private val app: Application) {
         // SurfaceView/BLAST layers are normally the app's continuously rendered
         // content. Limit shell round-trips so an app with many child layers
         // cannot stall the polling worker.
-        val layers = listing.lineSequence()
+        val appLayers = listing.lineSequence()
             .map { it.trim() }
             .filter { it.isNotEmpty() && it.contains(packageName, ignoreCase = true) }
             .distinct()
-            .sortedByDescending { if (it.contains("SurfaceView", true) || it.contains("BLAST", true)) 1 else 0 }
-            .take(5)
             .toList()
+        val primaryLayers = appLayers.filter {
+            it.contains("SurfaceView", ignoreCase = true) || it.contains("BLAST", ignoreCase = true)
+        }
+        val layers = (primaryLayers.ifEmpty { appLayers }).take(5)
         if (layers.isEmpty()) return null
 
-        val nowNs = SystemClock.elapsedRealtimeNanos()
+        val nowNs = System.nanoTime()
         val samples = layers.mapNotNull { layer ->
             val safeLayer = layer.replace("'", "'\\''")
             val output = svc.runShell("dumpsys SurfaceFlinger --latency '$safeLayer'")
