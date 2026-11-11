@@ -26,8 +26,9 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // Keep the deck (and the app inside it) alive instead of closing it.
-                if (!controller.handleBack()) moveTaskToBack(true)
+                // Back is routed to the focused app on the virtual display.
+                // The host activity only exits through the assistant bubble.
+                controller.handleBack()
             }
         })
 
