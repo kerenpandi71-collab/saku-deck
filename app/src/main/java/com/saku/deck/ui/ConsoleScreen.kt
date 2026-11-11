@@ -70,6 +70,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.positionChange
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.saku.deck.AppEntry
 import com.saku.deck.DeckController
 import com.saku.deck.ShizukuState
 
@@ -201,6 +202,7 @@ private fun RecentTasksDialog(c: DeckController) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
+                            AppIcon(AppEntry(entry.label, entry.component.substringBefore('/'), entry.component))
                             Column(
                                 Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
                                     .clickable { c.focusRecentTask(entry) }
