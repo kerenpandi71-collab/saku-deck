@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import com.saku.deck.service.DeckUserService
 import rikka.shizuku.Shizuku
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 enum class ShizukuState { NOT_INSTALLED, NOT_RUNNING, NO_PERMISSION, CONNECTING, READY }
 
@@ -92,34 +93,71 @@ class DeckController(private val app: Application) {
         private set
 
     /**
-     * Read the actual presented-frame timestamps for the foreground app's
-     * SurfaceView layer from SurfaceFlinger. This is not the panel refresh rate
-     * and does not estimate FPS from Compose animations.
+     * Collect per-layer frame timing from SurfaceFlinger's TimeStats using the
+     * Shizuku UserService (shell identity). The reported averageFPS is computed
+     * from present-to-present intervals, not the panel refresh rate.
      */
     fun refreshVirtualFps() {
-        val svc = service ?: return
-        val pkg = currentApp?.packageName ?: return
-        fpsWorker.execute {
-            val measured = runCatching {
-                val layerList = svc.runShell("dumpsys SurfaceFlinger --list")
-                val candidates = layerList.lineSequence()
-                    .filter { it.contains(pkg, ignoreCase = true) }
-                    .toList()
-                val layer = candidates.firstOrNull {
-                    it.contains("SurfaceView", ignoreCase = true) ||
-                        it.contains("BLAST", ignoreCase = true)
-                } ?: candidates.firstOrNull()
-                if (layer == null) return@runCatching 0
-                val dump = svc.runShell("dumpsys SurfaceFlinger --latency \"$layer\"")
-                val cutoff = SystemClock.elapsedRealtimeNanos() - 1_000_000_000L
-                val timestamps = dump.lineSequence().drop(1).mapNotNull { line ->
-                    val columns = line.trim().split(Regex("\\s+"))
-                    columns.getOrNull(1)?.toLongOrNull()?.takeIf { it > 0L }
-                }.filter { it >= cutoff }.toList()
-                timestamps.size.coerceIn(0, 240)
-            }.getOrDefault(0)
-            main.post { virtualFps = measured }
+        val svc = service ?: run {
+            virtualFps = 0
+            return
         }
+        val pkg = currentApp?.packageName ?: run {
+            virtualFps = 0
+            return
+        }
+        if (!fpsQueryRunning.compareAndSet(false, true)) return
+
+        fpsWorker.execute {
+            try {
+                val measured = runCatching {
+                    if (fpsCapturePackage != pkg) {
+                        // Reset the counter when the foreground virtual-display app changes.
+                        val enabled = svc.runShell(
+                            "dumpsys SurfaceFlinger --timestats -clear -enable"
+                        )
+                        if (enabled.contains("Error:", ignoreCase = true)) {
+                            fpsCapturePackage = null
+                            return@runCatching 0
+                        }
+                        fpsCapturePackage = pkg
+                        return@runCatching 0 // let the next poll collect real frame samples
+                    }
+
+                    val dump = svc.runShell("dumpsys SurfaceFlinger --timestats -dump")
+                    parseSurfaceFlingerAverageFps(dump, pkg) ?: 0
+                }.getOrDefault(0)
+
+                main.post {
+                    virtualFps = measured.coerceIn(0, 240)
+                }
+            } finally {
+                fpsQueryRunning.set(false)
+            }
+        }
+    }
+
+    private fun parseSurfaceFlingerAverageFps(dump: String, packageName: String): Int? {
+        if (dump.isBlank() || dump.contains("Error:", ignoreCase = true)) return null
+
+        // TimeStats emits one block per layer. Match packageName first, then
+        // layerName for vendor builds that omit the packageName field.
+        val blocks = dump.split(Regex("(?m)(?=^\\s*layerName\\s*=)"))
+        val packagePattern = Regex(
+            "(?m)^\\s*packageName\\s*=\\s*${Regex.escape(packageName)}\\s*$"
+        )
+        val block = blocks.firstOrNull { packagePattern.containsMatchIn(it) }
+            ?: blocks.firstOrNull {
+                it.contains(packageName, ignoreCase = false) &&
+                    it.contains("layerName", ignoreCase = true)
+            }
+            ?: return null
+
+        val value = Regex("(?m)^\\s*averageFPS\\s*=\\s*([0-9]+(?:\\.[0-9]+)?)")
+            .find(block)?.groupValues?.getOrNull(1)?.toFloatOrNull()
+            ?: return null
+        if (!value.isFinite() || value <= 0f) return null
+        return kotlin.math.round(value).toInt()
     }
 
     fun toggleTitanPortraitMode() {
@@ -162,6 +200,8 @@ class DeckController(private val app: Application) {
     // Keep Binder input injection off the Compose/UI thread; preserve event order.
     private val inputWorker = Executors.newSingleThreadExecutor()
     private val fpsWorker = Executors.newSingleThreadExecutor()
+    private val fpsQueryRunning = AtomicBoolean(false)
+    @Volatile private var fpsCapturePackage: String? = null
     private val main = Handler(Looper.getMainLooper())
 
     private var surface: Surface? = null
@@ -215,7 +255,9 @@ class DeckController(private val app: Application) {
         Shizuku.addBinderDeadListener {
             main.post {
                 service = null
+                fpsCapturePackage = null
                 binding = false
+                virtualFps = 0
                 displayId = -1
                 currentApp = null
                 pickerOpen = true
@@ -396,6 +438,8 @@ class DeckController(private val app: Application) {
         displayW = 0
         displayH = 0
         currentApp = null
+        virtualFps = 0
+        fpsCapturePackage = null
         pickerOpen = true
         busy = false
         keyDownTimes.clear()
