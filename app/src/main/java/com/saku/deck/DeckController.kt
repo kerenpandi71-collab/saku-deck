@@ -505,6 +505,8 @@ class DeckController(private val app: Application) {
         fpsCapturePackage = null
         fpsLastValidAtMs = 0L
         pickerOpen = true
+        recentsOpen = false
+        recentTasks = emptyList()
         busy = false
         keyDownTimes.clear()
         mouseCursorInitialized = false
@@ -1311,6 +1313,10 @@ class DeckController(private val app: Application) {
 
     /** Returns true when the back press was used by the deck. */
     fun handleBack(): Boolean {
+        if (recentsOpen) {
+            recentsOpen = false
+            return true
+        }
         if (pickerOpen && currentApp != null) {
             pickerOpen = false
             return true
