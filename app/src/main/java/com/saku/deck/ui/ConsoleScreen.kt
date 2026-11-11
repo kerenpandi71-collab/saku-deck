@@ -390,7 +390,7 @@ private fun TitanStatusStrip(c: DeckController) {
 
 @Composable
 private fun TitanNavigationRow(c: DeckController) {
-    // Keep only the two navigation controls requested: Back and Home.
+    // Navigation stays scoped to the virtual display: Back, Deck Home, and Deck Recents.
     Row(
         Modifier.fillMaxWidth().heightIn(min = 34.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -398,23 +398,25 @@ private fun TitanNavigationRow(c: DeckController) {
         listOf(
             "‹" to KeyEvent.KEYCODE_BACK,
             "⌂" to KeyEvent.KEYCODE_HOME,
+            "REC" to KeyEvent.KEYCODE_APP_SWITCH,
         ).forEach { (label, code) ->
             Box(
                 Modifier.weight(1f).height(34.dp)
                     .clip(RoundedCornerShape(5.dp))
                     .background(Color(0xFF34383D))
                     .clickable {
-                        if (code == KeyEvent.KEYCODE_BACK) {
-                            c.sendNavigationBack(true)
-                            c.sendNavigationBack(false)
-                        } else {
-                            c.sendKey(code, true)
-                            c.sendKey(code, false)
+                        when (code) {
+                            KeyEvent.KEYCODE_BACK -> {
+                                c.sendNavigationBack(true)
+                                c.sendNavigationBack(false)
+                            }
+                            KeyEvent.KEYCODE_HOME -> c.openPicker()
+                            KeyEvent.KEYCODE_APP_SWITCH -> c.openRecentTasks()
                         }
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, color = Color(0xFFE1E3E6), fontSize = 16.sp)
+                Text(label, color = Color(0xFFE1E3E6), fontSize = 12.sp)
             }
         }
     }
