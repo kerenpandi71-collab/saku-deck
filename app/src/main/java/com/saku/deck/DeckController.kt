@@ -624,7 +624,7 @@ class DeckController(private val app: Application) {
     }
 
     private fun persistRecentApps(entries: List<RecentTaskEntry>) {
-        val serialized = entries.take(50).joinToString("\\n") { "${it.label}|${it.component}" }
+        val serialized = entries.take(50).joinToString("\n") { "${it.label}|${it.component}" }
         app.getSharedPreferences(RECENT_APPS_PREFS, Context.MODE_PRIVATE).edit()
             .putString(RECENT_APPS_KEY, serialized).apply()
     }
