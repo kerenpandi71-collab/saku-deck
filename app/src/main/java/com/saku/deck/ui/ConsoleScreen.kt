@@ -113,7 +113,10 @@ fun ConsoleScreen(c: DeckController) {
             // Only the keyboard bridge pads itself above the IME, so the
             // virtual display keeps a stable size while typing.
     ) {
-        val side = (maxWidth * 0.22f).coerceIn(150.dp, 260.dp)
+        // Widen the center display by slightly reducing both side panels as
+        // the user increases frame width. This changes host layout, not render resolution.
+        val baseSide = (maxWidth * 0.22f).coerceIn(150.dp, 260.dp)
+        val side = baseSide * (2f - c.landscapeFrameWidth)
         val scale = minOf(maxHeight.value / 360f, side.value / 180f).coerceIn(0.7f, 1.8f)
         // Follow the physical host orientation. The Android sensor decides
         // portrait vs landscape; the old saved mode must not override rotation.
@@ -130,7 +133,11 @@ fun ConsoleScreen(c: DeckController) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SidePanel(left = true, c = c, scale = scale, modifier = Modifier.width(side).fillMaxHeight())
-                ScreenArea(c, Modifier.weight(1f).fillMaxHeight().padding(horizontal = 4.dp))
+                ScreenArea(
+                    c,
+                    Modifier.weight(1f).fillMaxHeight(c.landscapeFrameHeight)
+                        .padding(horizontal = 4.dp),
+                )
                 SidePanel(left = false, c = c, scale = scale, modifier = Modifier.width(side).fillMaxHeight())
             }
         } else {
@@ -164,6 +171,7 @@ fun ConsoleScreen(c: DeckController) {
             if (c.assistantMenuOpen) {
                 buildList<Pair<String, () -> Unit>> {
                     if (!portraitLayout) {
+                        add("UKURAN KOTAK LAYAR" to { c.landscapeFrameDialogOpen = true })
                         add("RESOLUSI CUSTOM LANDSCAPE" to { c.landscapeResolutionDialogOpen = true })
                     }
                     add("ROTASI OTOMATIS ANDROID" to { c.assistantMenuOpen = false })
@@ -247,11 +255,63 @@ fun ConsoleScreen(c: DeckController) {
         }
         if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
         if (c.controlSizeMenuOpen) ControlSizeDialog(c)
+        if (c.landscapeFrameDialogOpen && !portraitLayout) LandscapeFrameSizeDialog(c)
         if (c.landscapeResolutionDialogOpen && !portraitLayout) LandscapeResolutionDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
         if (c.mappingMenuOpen) MappingDialog(c)
         if (c.logDialogOpen) ErrorLogDialog(c)
     }
+}
+
+@Composable
+private fun LandscapeFrameSizeDialog(c: DeckController) {
+    var width by remember(c.landscapeFrameWidth) { mutableStateOf(c.landscapeFrameWidth) }
+    var height by remember(c.landscapeFrameHeight) { mutableStateOf(c.landscapeFrameHeight) }
+
+    AlertDialog(
+        onDismissRequest = { c.landscapeFrameDialogOpen = false },
+        title = { Text("Ukuran kotak layar Landscape") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Atur bingkai layar ke samping atau atas-bawah. Resolusi render dan DPI tidak dinaikkan; panel kontrol samping sedikit menyempit saat kotak diperlebar.",
+                    color = Deck.Ink.copy(alpha = 0.76f),
+                    fontSize = 11.sp,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("LEBAR KOTAK", Modifier.weight(1f), color = Deck.Ink, fontSize = 12.sp)
+                        Text("${(width * 100).toInt()}%", color = Deck.Accent, fontSize = 12.sp)
+                    }
+                    Slider(value = width, onValueChange = { width = it }, valueRange = 1f..1.15f)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("TINGGI KOTAK", Modifier.weight(1f), color = Deck.Ink, fontSize = 12.sp)
+                        Text("${(height * 100).toInt()}%", color = Deck.Accent, fontSize = 12.sp)
+                    }
+                    Slider(value = height, onValueChange = { height = it }, valueRange = 0.75f..1f)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                c.setLandscapeFrameSize(width, height)
+                c.landscapeFrameDialogOpen = false
+                c.message = "Ukuran kotak layar Landscape disimpan."
+            }) { Text("TERAPKAN") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = {
+                    width = 1f
+                    height = 1f
+                    c.setLandscapeFrameSize(1f, 1f)
+                }) { Text("RESET") }
+                TextButton(onClick = { c.landscapeFrameDialogOpen = false }) { Text("BATAL") }
+            }
+        },
+    )
 }
 
 @Composable
