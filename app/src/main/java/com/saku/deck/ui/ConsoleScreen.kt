@@ -75,6 +75,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -125,8 +129,15 @@ fun ConsoleScreen(c: DeckController) {
         } else {
             ScreenArea(c, Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 8.dp))
         }
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val bubbleSizePx = with(density) { 48.dp.toPx() }
+        val initialBubble = Offset(
+            (constraints.maxWidth.toFloat() - bubbleSizePx - with(density) { 14.dp.toPx() }).coerceAtLeast(0f),
+            (constraints.maxHeight.toFloat() - bubbleSizePx - with(density) { 18.dp.toPx() }).coerceAtLeast(0f),
+        )
+        var assistantOffset by remember(c.titanPortraitMode) { mutableStateOf(initialBubble) }
         Column(
-            Modifier.align(Alignment.BottomEnd).padding(12.dp),
+            Modifier.offset { IntOffset(assistantOffset.x.roundToInt(), assistantOffset.y.roundToInt()) },
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
@@ -172,12 +183,35 @@ fun ConsoleScreen(c: DeckController) {
                 Box(
                     Modifier.size(48.dp).shadow(6.dp, CircleShape).clip(CircleShape)
                         .background(Deck.Accent)
+                        .pointerInput(constraints.maxWidth, constraints.maxHeight) {
+                            detectDragGestures(
+                                onDragEnd = {
+                                    val maxX = (constraints.maxWidth.toFloat() - size.width).coerceAtLeast(0f)
+                                    val maxY = (constraints.maxHeight.toFloat() - size.height).coerceAtLeast(0f)
+                                    assistantOffset = Offset(
+                                        assistantOffset.x.coerceIn(0f, maxX),
+                                        assistantOffset.y.coerceIn(0f, maxY),
+                                    )
+                                },
+                            ) { change, drag ->
+                                change.consume()
+                                val maxX = (constraints.maxWidth.toFloat() - size.width).coerceAtLeast(0f)
+                                val maxY = (constraints.maxHeight.toFloat() - size.height).coerceAtLeast(0f)
+                                assistantOffset = Offset(
+                                    (assistantOffset.x + drag.x).coerceIn(0f, maxX),
+                                    (assistantOffset.y + drag.y).coerceIn(0f, maxY),
+                                )
+                            }
+                        }
                         .clickable { c.assistantMenuOpen = !c.assistantMenuOpen },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(if (c.assistantMenuOpen) "×" else "●", color = Color.White, fontSize = 22.sp)
                 }
             }
+        }
+        if (c.recentsOpen) {
+            RecentTasksDialog(c)
         }
         if (c.externalKeyboardOpen) {
             ExternalKeyboardBridge(
@@ -827,7 +861,6 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
                 c.displayId < 0 -> LoadingPanel(c)
                 c.pickerOpen -> AppPicker(c)
             }
-            if (c.recentsOpen) RecentTasksDialog(c)
             c.message?.let { text ->
                 MessageBanner(text, Modifier.align(Alignment.BottomCenter)) { c.message = null }
             }
