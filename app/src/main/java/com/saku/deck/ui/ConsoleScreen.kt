@@ -75,6 +75,7 @@ import com.saku.deck.ShizukuState
 
 @Composable
 fun ConsoleScreen(c: DeckController) {
+    val hostActivity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -122,6 +123,7 @@ fun ConsoleScreen(c: DeckController) {
                     "VISIBILITAS" to { c.visibilityMenuOpen = true },
                     "UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true },
                     "ATUR POSISI" to { c.beginControlLayoutEdit() },
+                    "KELUAR DARI SAKU DECK" to { hostActivity?.finish() },
                 ).forEach { (label, action) ->
                     Text(label, Modifier.clip(RoundedCornerShape(50))
                         .background(Color.Black.copy(alpha = 0.88f))
@@ -378,6 +380,20 @@ private fun TitanKeyboard(c: DeckController) {
             .background(Color(0xFF24272B)).padding(3.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            TitanUtilityKey("COPY", Modifier.weight(1f)) {
+                c.sendShortcut(KeyEvent.KEYCODE_C)
+            }
+            TitanUtilityKey("PASTE", Modifier.weight(1f)) {
+                c.sendShortcut(KeyEvent.KEYCODE_V)
+            }
+            TitanUtilityKey("SELECT ALL", Modifier.weight(1.35f)) {
+                c.sendShortcut(KeyEvent.KEYCODE_A)
+            }
+        }
         rows.forEach { row ->
             Row(
                 Modifier.fillMaxWidth(),
