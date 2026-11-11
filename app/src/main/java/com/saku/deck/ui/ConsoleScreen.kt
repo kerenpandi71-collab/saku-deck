@@ -167,16 +167,16 @@ fun ConsoleScreen(c: DeckController) {
                         add("RESOLUSI CUSTOM LANDSCAPE" to { c.landscapeResolutionDialogOpen = true })
                     }
                     add("ROTASI OTOMATIS ANDROID" to { c.assistantMenuOpen = false })
-                    (if (c.performanceMode) "MODE KUALITAS PENUH" else "MODE PERFORMA") to { c.togglePerformanceMode() },
-                    (if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() },
-                    (if (c.externalKeyboardOpen) "TUTUP KEYBOARD LUAR" else "KEYBOARD LUAR") to {
+                    add((if (c.performanceMode) "MODE KUALITAS PENUH" else "MODE PERFORMA") to { c.togglePerformanceMode() })
+                    add((if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() })
+                    add((if (c.externalKeyboardOpen) "TUTUP KEYBOARD LUAR" else "KEYBOARD LUAR") to {
                         c.updateExternalKeyboardOpen(!c.externalKeyboardOpen)
-                    },
-                    "MAPPING ML" to { c.openMappingMenu() },
-                    "VISIBILITAS" to { c.visibilityMenuOpen = true },
-                    "UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true },
-                    "ATUR POSISI" to { c.beginControlLayoutEdit() },
-                    "LOG ERROR" to { c.logDialogOpen = true },
+                    })
+                    add("MAPPING ML" to { c.openMappingMenu() })
+                    add("VISIBILITAS" to { c.visibilityMenuOpen = true })
+                    add("UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true })
+                    add("ATUR POSISI" to { c.beginControlLayoutEdit() })
+                    add("LOG ERROR" to { c.logDialogOpen = true })
                     add("KELUAR DARI SAKU DECK" to {
                         hostActivity?.let { activity ->
                             // Finish only after the virtual display is released,
@@ -261,7 +261,7 @@ private fun LandscapeResolutionDialog(c: DeckController) {
     var dpiText by remember(c.landscapeDpi) { mutableStateOf(c.landscapeDpi.toString()) }
 
     fun numericField(value: String, onValueChange: (String) -> Unit, label: String) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.width(112.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label, color = Deck.Ink.copy(alpha = 0.72f), fontSize = 10.sp)
             BasicTextField(
                 value = value,
