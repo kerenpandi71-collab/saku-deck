@@ -98,6 +98,15 @@ class DeckController(private val app: Application) {
     // SurfaceFlinger upscales it, cutting real GPU load on low-end chips.
     var performanceMode by mutableStateOf(loadPerformanceMode())
         private set
+    var landscapeResolutionDialogOpen by mutableStateOf(false)
+    var landscapeResolutionEnabled by mutableStateOf(loadLandscapeResolutionEnabled())
+        private set
+    var landscapeWidth by mutableIntStateOf(loadLandscapeWidth())
+        private set
+    var landscapeHeight by mutableIntStateOf(loadLandscapeHeight())
+        private set
+    var landscapeDpi by mutableIntStateOf(loadLandscapeDpi())
+        private set
 
     /**
      * Measure the foreground app's real SurfaceFlinger presentation cadence.
@@ -234,9 +243,54 @@ class DeckController(private val app: Application) {
         ensureDisplay()
     }
 
+    fun applyLandscapeResolution(width: Int, height: Int, dpi: Int) {
+        if (width !in 640..3840 || height !in 360..2160 || width <= height || dpi !in 120..640) {
+            message = "Resolusi Landscape harus 640–3840 × 360–2160, lebar lebih besar dari tinggi, DPI 120–640."
+            return
+        }
+        landscapeWidth = width
+        landscapeHeight = height
+        landscapeDpi = dpi
+        landscapeResolutionEnabled = true
+        app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean("enabled", true)
+            .putInt("width", width)
+            .putInt("height", height)
+            .putInt("dpi", dpi)
+            .apply()
+        landscapeResolutionDialogOpen = false
+        message = "Resolusi custom Landscape diterapkan: ${width}×${height} @ ${dpi} DPI."
+        ensureDisplay()
+    }
+
+    fun disableLandscapeResolution() {
+        landscapeResolutionEnabled = false
+        app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("enabled", false).apply()
+        landscapeResolutionDialogOpen = false
+        message = "Resolusi Landscape kembali mengikuti ukuran layar otomatis."
+        ensureDisplay()
+    }
+
     private fun loadPerformanceMode(): Boolean =
         app.getSharedPreferences(PERFORMANCE_PREFS, Context.MODE_PRIVATE)
             .getBoolean("low_resolution", false)
+
+    private fun loadLandscapeResolutionEnabled(): Boolean =
+        app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
+            .getBoolean("enabled", false)
+
+    private fun loadLandscapeWidth(): Int =
+        app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
+            .getInt("width", 1920)
+
+    private fun loadLandscapeHeight(): Int =
+        app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
+            .getInt("height", 1080)
+
+    private fun loadLandscapeDpi(): Int =
+        app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
+            .getInt("dpi", 240)
 
     private fun loadTitanPortraitMode(): Boolean =
         app.getSharedPreferences("saku_deck_display_mode", Context.MODE_PRIVATE)
@@ -265,6 +319,7 @@ class DeckController(private val app: Application) {
     private var surfaceH = 0
     private var displayW = 0
     private var displayH = 0
+    private var displayDpi = 0
 
     // lx, ly, rx, ry, left trigger, right trigger
     private val axes = FloatArray(6)
@@ -284,8 +339,27 @@ class DeckController(private val app: Application) {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            if (binder == null || !binder.pingBinder()) return
-            service = IDeckService.Stub.asInterface(binder)
+            if (binder == null || !binder.pingBinder()) {
+                service = null
+                main.post {
+                    binding = false
+                    shizukuState = ShizukuState.NOT_RUNNING
+                    message = "Binder Shizuku tidak valid; mencoba menyambungkan ulang."
+                    scheduleShizukuReconnect()
+                }
+                return
+            }
+            val connected = runCatching { IDeckService.Stub.asInterface(binder) }.getOrNull()
+            if (connected == null || !runCatching { connected.asBinder().isBinderAlive }.getOrDefault(false)) {
+                service = null
+                main.post {
+                    binding = false
+                    shizukuState = ShizukuState.NOT_RUNNING
+                    scheduleShizukuReconnect()
+                }
+                return
+            }
+            service = connected
             main.post {
                 binding = false
                 shizukuState = ShizukuState.READY
@@ -295,18 +369,43 @@ class DeckController(private val app: Application) {
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            service = null
-            fpsCapturePackage = null
-            fpsLastValidAtMs = 0L
-            main.post {
-                binding = false
-                virtualFps = 0
-                displayId = -1
-                currentApp = null
-                pickerOpen = true
-                refresh()
-            }
+            handleShizukuServiceLost("Koneksi layanan Shizuku terputus.")
         }
+
+        override fun onBindingDied(name: ComponentName?) {
+            handleShizukuServiceLost("Binding layanan Shizuku mati; menyambungkan ulang.")
+            runCatching { Shizuku.unbindUserService(userServiceArgs, this, true) }
+        }
+
+        override fun onNullBinding(name: ComponentName?) {
+            handleShizukuServiceLost("Layanan Shizuku mengembalikan Binder kosong.")
+            runCatching { Shizuku.unbindUserService(userServiceArgs, this, true) }
+        }
+    }
+
+    private fun handleShizukuServiceLost(reason: String) {
+        service = null
+        fpsCapturePackage = null
+        fpsLastValidAtMs = 0L
+        main.post {
+            binding = false
+            virtualFps = 0
+            displayId = -1
+            displayW = 0
+            displayH = 0
+            displayDpi = 0
+            currentApp = null
+            pickerOpen = true
+            shizukuState = ShizukuState.CONNECTING
+            message = reason
+            scheduleShizukuReconnect()
+        }
+    }
+
+    private fun scheduleShizukuReconnect() {
+        main.postDelayed({
+            if (hostActive && !shuttingDown && service == null && !binding) refresh()
+        }, 650L)
     }
 
     fun init() {
@@ -337,10 +436,14 @@ class DeckController(private val app: Application) {
 
     fun refresh() {
         if (!hostActive || shuttingDown) return
-        if (service != null) {
+        val connectedService = service
+        if (connectedService != null && runCatching { connectedService.asBinder().isBinderAlive }.getOrDefault(false)) {
             shizukuState = ShizukuState.READY
             return
         }
+        // A stale AIDL proxy must not keep the UI in READY after Shizuku died.
+        service = null
+        binding = false
         shizukuState = try {
             when {
                 !Shizuku.pingBinder() ->
@@ -431,16 +534,23 @@ class DeckController(private val app: Application) {
             return
         }
         val quality = if (performanceMode) PERFORMANCE_RENDER_SCALE else 1f
-        val w = ((surfaceW * quality).toInt() and 1.inv()).coerceAtLeast(64)
-        val h = ((surfaceH * quality).toInt() and 1.inv()).coerceAtLeast(64)
-        val dpi = (app.resources.displayMetrics.densityDpi * DPI_SCALE * quality).toInt().coerceAtLeast(120)
+        // Custom dimensions are consulted only while the physical host and
+        // SurfaceView are landscape. Portrait always uses its live surface size.
+        val useLandscapeCustom = surfaceW > surfaceH && landscapeResolutionEnabled
+        val baseW = if (useLandscapeCustom) landscapeWidth else surfaceW
+        val baseH = if (useLandscapeCustom) landscapeHeight else surfaceH
+        val baseDpi = if (useLandscapeCustom) landscapeDpi
+            else (app.resources.displayMetrics.densityDpi * DPI_SCALE).toInt().coerceAtLeast(120)
+        val w = ((baseW * quality).toInt() and 1.inv()).coerceAtLeast(64)
+        val h = ((baseH * quality).toInt() and 1.inv()).coerceAtLeast(64)
+        val dpi = (baseDpi * quality).toInt().coerceAtLeast(120)
         val existing = displayId
         busy = true
         worker.execute {
             val result = runCatching {
                 if (existing >= 0) {
                     svc.setSurface(Bundle().apply { putParcelable("surface", s) })
-                    if (w != displayW || h != displayH) svc.resizeDisplay(w, h, dpi)
+                    if (w != displayW || h != displayH || dpi != displayDpi) svc.resizeDisplay(w, h, dpi)
                     Bundle().apply { putInt("displayId", existing) }
                 } else {
                     svc.createDisplay(Bundle().apply {
@@ -459,6 +569,7 @@ class DeckController(private val app: Application) {
                         displayId = id
                         displayW = w
                         displayH = h
+                        displayDpi = dpi
                         if (existing < 0) {
                             // A fresh display starts without a cursor position.
                             mouseCursorInitialized = false
@@ -502,6 +613,7 @@ class DeckController(private val app: Application) {
         displayId = -1
         displayW = 0
         displayH = 0
+        displayDpi = 0
         currentApp = null
         virtualFps = 0
         fpsCapturePackage = null
@@ -1415,6 +1527,7 @@ class DeckController(private val app: Application) {
         private const val REQUEST_CODE = 7
         private const val TRACKPAD_TOUCH_KEY = "trackpad_cursor"
         private const val PERFORMANCE_PREFS = "saku_deck_performance"
+        private const val LANDSCAPE_RESOLUTION_PREFS = "saku_deck_landscape_resolution"
         private const val PERFORMANCE_RENDER_SCALE = 0.8f
         private const val TRACKPAD_MIN_GAIN = 0.55f
         private const val TRACKPAD_MAX_GAIN = 1.6f
