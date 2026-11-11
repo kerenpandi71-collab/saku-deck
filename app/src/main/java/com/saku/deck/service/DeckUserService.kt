@@ -28,6 +28,7 @@ class DeckUserService : IDeckService.Stub() {
     private val navigationPackage = "com.android.shell"
     private var lastInputError = "Belum ada event input yang diuji."
     private var lastInputLogAt = 0L
+    @Volatile private var taskWindowOrganizer: Any? = null
 
     init {
         runCatching { HiddenApiBypass.addHiddenApiExemptions("") }
@@ -289,6 +290,126 @@ class DeckUserService : IDeckService.Stub() {
             return exec(base + listOf("-f", "0x18000000", "-n", component))
         }
         return first
+    }
+
+    // ---- Virtual-display Recent Apps (ActivityTaskManager) ------------------
+
+    private fun frameworkTaskService(): Any {
+        val manager = Class.forName("android.app.ActivityTaskManager")
+        return manager.getDeclaredMethod("getService").apply { isAccessible = true }
+            .invoke(null) ?: throw IllegalStateException("ActivityTaskManager tidak tersedia")
+    }
+
+    private fun frameworkTasks(targetDisplayId: Int): List<Any> {
+        require(targetDisplayId >= 0) { "Display ID tidak valid: $targetDisplayId" }
+        val service = frameworkTaskService()
+        val method = service.javaClass.getMethod(
+            "getTasks", Int::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType
+        )
+        return (method.invoke(service, 100, false, false, targetDisplayId) as? List<*>)
+            ?.filterNotNull()
+            ?: throw IllegalStateException("ActivityTaskManager tidak mengembalikan daftar task")
+    }
+
+    private fun taskComponent(task: Any): String? {
+        val component = runCatching { task.javaClass.getField("topActivity").get(task) }.getOrNull()
+            ?: runCatching { task.javaClass.getField("baseActivity").get(task) }.getOrNull()
+            ?: return null
+        val value = component.javaClass.getMethod("flattenToShortString").invoke(component) as? String
+        return value?.takeIf { it.matches(Regex("""[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+""")) }
+    }
+
+    private fun verifiedTask(targetDisplayId: Int, taskId: Int): Pair<Any, String>? {
+        if (targetDisplayId < 0 || taskId <= 0) return null
+        val task = frameworkTasks(targetDisplayId).firstOrNull {
+            runCatching { it.javaClass.getField("taskId").getInt(it) == taskId }.getOrDefault(false)
+        } ?: return null
+        val component = taskComponent(task) ?: return null
+        if (component.substringBefore('/') == "com.saku.deck") return null
+        return task to component
+    }
+
+    override fun getOpenTasks(targetDisplayId: Int): String {
+        return try {
+            val entries = frameworkTasks(targetDisplayId).mapNotNull { task ->
+                val id = runCatching { task.javaClass.getField("taskId").getInt(task) }.getOrNull()
+                    ?: return@mapNotNull null
+                val component = taskComponent(task) ?: return@mapNotNull null
+                if (component.substringBefore('/') == "com.saku.deck") return@mapNotNull null
+                "taskId=$id • $component"
+            }.distinctBy { it.substringBefore(' ') }.take(50)
+            if (entries.isEmpty()) "" else entries.joinToString("\n")
+        } catch (error: Throwable) {
+            val cause = unwrap(error)
+            Log.w("SakuDeckRecents", "Gagal membaca task display $targetDisplayId", cause)
+            ""
+        }
+    }
+
+    private fun applyTaskTransaction(task: Any, remove: Boolean) {
+        val token = task.javaClass.getField("token").get(task)
+            ?: throw IllegalStateException("Task token tidak tersedia")
+        val tokenClass = Class.forName("android.window.WindowContainerToken")
+        val transactionClass = Class.forName("android.window.WindowContainerTransaction")
+        val transaction = transactionClass.getConstructor().newInstance()
+        if (remove) {
+            transactionClass.getMethod("removeTask", tokenClass).invoke(transaction, token)
+        } else {
+            transactionClass.getMethod(
+                "reorder", tokenClass, Boolean::class.javaPrimitiveType,
+                Boolean::class.javaPrimitiveType
+            ).invoke(transaction, token, true, true)
+        }
+        val organizerClass = Class.forName("android.window.WindowOrganizer")
+        taskWindowOrganizer ?: synchronized(this) {
+            taskWindowOrganizer ?: organizerClass.getConstructor().newInstance().also { created ->
+                val shared = organizerClass.getMethod("shareTransactionQueue").invoke(created) as? Boolean
+                if (shared != true) throw IllegalStateException("WindowManager transaction queue tidak tersedia")
+                taskWindowOrganizer = created
+            }
+        }
+        val controller = frameworkTaskService().let { service ->
+            service.javaClass.getMethod("getWindowOrganizerController").invoke(service)
+        } ?: throw IllegalStateException("WindowOrganizerController tidak tersedia")
+        controller.javaClass.getMethod("applyTransaction", transactionClass).invoke(controller, transaction)
+    }
+
+    override fun focusOpenTask(targetDisplayId: Int, taskId: Int): String {
+        return try {
+            val (task, component) = verifiedTask(targetDisplayId, taskId)
+                ?: return "Task #$taskId tidak ditemukan pada display $targetDisplayId."
+            val atm = frameworkTaskService()
+            val moveToFront = atm.javaClass.methods.firstOrNull { method ->
+                method.name == "moveTaskToFront" && method.parameterTypes.size == 3 &&
+                    method.parameterTypes[0] == Int::class.javaPrimitiveType &&
+                    method.parameterTypes[1] == Int::class.javaPrimitiveType
+            }
+            val moved = moveToFront != null && runCatching {
+                moveToFront.invoke(atm, taskId, 0, null)
+                true
+            }.getOrDefault(false)
+            if (!moved) applyTaskTransaction(task, false)
+            "Task #$taskId ($component) difokuskan pada display $targetDisplayId."
+        } catch (error: Throwable) {
+            val cause = unwrap(error)
+            Log.w("SakuDeckRecents", "Gagal fokus task #$taskId", cause)
+            "Gagal membuka task #$taskId: ${cause.javaClass.simpleName}: ${cause.message}"
+        }
+    }
+
+    override fun closeOpenTask(targetDisplayId: Int, taskId: Int): String {
+        return try {
+            val (task, component) = verifiedTask(targetDisplayId, taskId)
+                ?: return "Task #$taskId tidak ditemukan pada display $targetDisplayId."
+            applyTaskTransaction(task, true)
+            "Task #$taskId ($component) ditutup."
+        } catch (error: Throwable) {
+            val cause = unwrap(error)
+            Log.w("SakuDeckRecents", "Gagal menutup task #$taskId", cause)
+            "Gagal menutup task #$taskId: ${cause.javaClass.simpleName}: ${cause.message}"
+        }
     }
 
     @Synchronized
