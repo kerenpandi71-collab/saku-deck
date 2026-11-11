@@ -163,6 +163,7 @@ fun ConsoleScreen(c: DeckController) {
                 assistantOffset.y.coerceIn(0f, maxY),
             )
         }
+        val assistantMenuMaxHeight = maxHeight * 0.72f
         Column(
             Modifier.offset { IntOffset(assistantOffset.x.roundToInt(), assistantOffset.y.roundToInt()) },
             horizontalAlignment = Alignment.End,
@@ -171,7 +172,7 @@ fun ConsoleScreen(c: DeckController) {
             if (c.assistantMenuOpen) {
                 Column(
                     Modifier.width(240.dp)
-                        .heightIn(max = maxHeight * 0.72f)
+                        .heightIn(max = assistantMenuMaxHeight)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                     horizontalAlignment = Alignment.End,
@@ -1031,6 +1032,23 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
                 .background(Deck.ScreenOff)
         ) {
             VirtualSurface(c, Modifier.fillMaxSize())
+            if (c.skillAimActive) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val aimX = c.skillAimX.coerceIn(0f, 1f) * size.width
+                    val aimY = c.skillAimY.coerceIn(0f, 1f) * size.height
+                    drawCircle(
+                        color = Color(0xFF168BFF),
+                        radius = 9.dp.toPx(),
+                        center = Offset(aimX, aimY),
+                    )
+                    drawCircle(
+                        color = Color.White,
+                        radius = 9.dp.toPx(),
+                        center = Offset(aimX, aimY),
+                        style = Stroke(width = 1.5.dp.toPx()),
+                    )
+                }
+            }
             TrackpadCursor(c)
             if (!c.titanPortraitMode) {
                 Text(
