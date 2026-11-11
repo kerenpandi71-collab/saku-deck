@@ -289,9 +289,20 @@ class DeckController(private val app: Application) {
             .getFloat("height", 1f).coerceIn(0.65f, 1f)
 
 
-    private fun loadLandscapeResolutionEnabled(): Boolean =
-        app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
-            .getBoolean("enabled", true)
+    private fun loadLandscapeResolutionEnabled(): Boolean {
+        val prefs = app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
+        // Migrate older installs from the former automatic/full-surface default
+        // to the requested 540p Landscape default, while retaining saved custom
+        // dimensions when the user had already enabled them.
+        if (!prefs.getBoolean("default_540p_migrated", false)) {
+            val editor = prefs.edit().putBoolean("default_540p_migrated", true)
+            if (!prefs.getBoolean("enabled", false)) {
+                editor.putBoolean("enabled", true).putInt("width", 960).putInt("height", 540)
+            }
+            editor.apply()
+        }
+        return prefs.getBoolean("enabled", true)
+    }
 
     private fun loadLandscapeWidth(): Int =
         app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
