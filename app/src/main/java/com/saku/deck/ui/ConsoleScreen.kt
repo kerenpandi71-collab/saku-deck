@@ -71,6 +71,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -117,6 +118,9 @@ fun ConsoleScreen(c: DeckController) {
         // Follow the physical host orientation. The Android sensor decides
         // portrait vs landscape; the old saved mode must not override rotation.
         val portraitLayout = maxHeight > maxWidth
+        LaunchedEffect(portraitLayout) {
+            if (portraitLayout) c.landscapeResolutionDialogOpen = false
+        }
 
         if (portraitLayout) {
             TitanPortraitShell(c, Modifier.fillMaxSize())
@@ -158,8 +162,11 @@ fun ConsoleScreen(c: DeckController) {
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             if (c.assistantMenuOpen) {
-                listOf(
-                    "ROTASI OTOMATIS ANDROID" to { c.assistantMenuOpen = false },
+                buildList<Pair<String, () -> Unit>> {
+                    if (!portraitLayout) {
+                        add("RESOLUSI CUSTOM LANDSCAPE" to { c.landscapeResolutionDialogOpen = true })
+                    }
+                    add("ROTASI OTOMATIS ANDROID" to { c.assistantMenuOpen = false })
                     (if (c.performanceMode) "MODE KUALITAS PENUH" else "MODE PERFORMA") to { c.togglePerformanceMode() },
                     (if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() },
                     (if (c.externalKeyboardOpen) "TUTUP KEYBOARD LUAR" else "KEYBOARD LUAR") to {
@@ -170,14 +177,14 @@ fun ConsoleScreen(c: DeckController) {
                     "UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true },
                     "ATUR POSISI" to { c.beginControlLayoutEdit() },
                     "LOG ERROR" to { c.logDialogOpen = true },
-                    "KELUAR DARI SAKU DECK" to {
+                    add("KELUAR DARI SAKU DECK" to {
                         hostActivity?.let { activity ->
                             // Finish only after the virtual display is released,
                             // navigation flags are restored and Shizuku is unbound.
                             c.shutdown { activity.finish() }
                         }
-                    },
-                ).forEach { (label, action) ->
+                    })
+                }.forEach { (label, action) ->
                     Text(label, Modifier.clip(RoundedCornerShape(50))
                         .background(Color.Black.copy(alpha = 0.88f))
                         .clickable { action(); c.assistantMenuOpen = false }
@@ -240,10 +247,77 @@ fun ConsoleScreen(c: DeckController) {
         }
         if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
         if (c.controlSizeMenuOpen) ControlSizeDialog(c)
+        if (c.landscapeResolutionDialogOpen && !portraitLayout) LandscapeResolutionDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
         if (c.mappingMenuOpen) MappingDialog(c)
         if (c.logDialogOpen) ErrorLogDialog(c)
     }
+}
+
+@Composable
+private fun LandscapeResolutionDialog(c: DeckController) {
+    var widthText by remember(c.landscapeWidth) { mutableStateOf(c.landscapeWidth.toString()) }
+    var heightText by remember(c.landscapeHeight) { mutableStateOf(c.landscapeHeight.toString()) }
+    var dpiText by remember(c.landscapeDpi) { mutableStateOf(c.landscapeDpi.toString()) }
+
+    fun numericField(value: String, onValueChange: (String) -> Unit, label: String) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, color = Deck.Ink.copy(alpha = 0.72f), fontSize = 10.sp)
+            BasicTextField(
+                value = value,
+                onValueChange = { next -> onValueChange(next.filter(Char::isDigit).take(4)) },
+                modifier = Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFE7EAF0))
+                    .padding(horizontal = 10.dp, vertical = 11.dp),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                textStyle = TextStyle(color = Color(0xFF151922), fontSize = 14.sp),
+            )
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { c.landscapeResolutionDialogOpen = false },
+        title = { Text("Resolusi custom Landscape") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Hanya berlaku saat layar Android Landscape. Portrait tetap memakai resolusi otomatis dan tidak diubah.",
+                    color = Deck.Ink.copy(alpha = 0.76f),
+                    fontSize = 11.sp,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    numericField(widthText, { widthText = it }, "LEBAR (PX)")
+                    numericField(heightText, { heightText = it }, "TINGGI (PX)")
+                }
+                numericField(dpiText, { dpiText = it }, "DPI")
+                Text(
+                    if (c.landscapeResolutionEnabled) "Status: custom aktif" else "Status: otomatis",
+                    color = Deck.Accent,
+                    fontSize = 10.sp,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val width = widthText.toIntOrNull()
+                val height = heightText.toIntOrNull()
+                val dpi = dpiText.toIntOrNull()
+                if (width != null && height != null && dpi != null) {
+                    c.applyLandscapeResolution(width, height, dpi)
+                } else {
+                    c.message = "Isi lebar, tinggi, dan DPI dengan angka yang valid."
+                }
+            }) { Text("TERAPKAN") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { c.disableLandscapeResolution() }) { Text("OTOMATIS") }
+                TextButton(onClick = { c.landscapeResolutionDialogOpen = false }) { Text("BATAL") }
+            }
+        },
+    )
 }
 
 @Composable
