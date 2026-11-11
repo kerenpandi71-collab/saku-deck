@@ -659,6 +659,12 @@ class DeckController(private val app: Application) {
     }
 
     fun closeRecentTask(entry: RecentTaskEntry) {
+        if (entry.taskId <= 0) {
+            val remaining = loadRecentApps().filterNot { it.component == entry.component }
+            persistRecentApps(remaining)
+            recentTasks = recentTasks.filterNot { it.component == entry.component }
+            return
+        }
         val svc = service ?: return
         val targetDisplay = displayId
         if (targetDisplay < 0) return
@@ -676,6 +682,7 @@ class DeckController(private val app: Application) {
             val saved = loadRecentApps()
             val entries = (active + saved.filterNot { old -> active.any { it.component == old.component } })
                 .distinctBy { it.component }.take(50)
+            persistRecentApps(entries)
             main.post {
                 if (displayId != targetDisplay || service !== svc) return@post
                 recentTasks = entries
