@@ -1237,10 +1237,9 @@ class DeckController(private val app: Application) {
             pickerOpen = false
             return true
         }
-        // Titan portrait has its own on-screen Back control. Ignore host/system
-        // Back dispatch here so a keyboard interaction cannot be interpreted as
-        // navigation; the explicit Titan Back button uses sendNavigationBack().
-        // Never forward Android's generic Back event into the virtual app.
+        // Ignore host/system Back dispatch so keyboard and IME focus changes
+        // cannot be interpreted as virtual-app navigation. The explicit Deck
+        // navigation control is the only path that sends KEYCODE_BACK.
         // This prevents key/IME focus changes from becoming accidental app
         // navigation. Back is available only through the explicit Deck control.
         // Keep the host deck in the foreground. Exiting is an explicit action
