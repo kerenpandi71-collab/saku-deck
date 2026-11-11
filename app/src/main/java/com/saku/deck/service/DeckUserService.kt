@@ -124,30 +124,32 @@ class DeckUserService : IDeckService.Stub() {
         try {
             // Shizuku UserService executes as shell (uid 2000), not as the app.
             // SystemUI validates the package attribution against the caller UID.
-            val attributedPackage = "com.android.shell"
+            val attributedPackage = navigationPackage
             val methods = statusBar.javaClass.methods
             val disableForUser = methods.firstOrNull {
-                it.name == "disableForUser" && it.parameterTypes.contentEquals(
-                    arrayOf(Int::class.javaPrimitiveType, IBinder::class.java, String::class.java, Int::class.javaPrimitiveType)
-                )
+                it.name == "disableForUser" && it.parameterTypes.size == 4 &&
+                    it.parameterTypes[0] == Int::class.javaPrimitiveType &&
+                    IBinder::class.java.isAssignableFrom(it.parameterTypes[1]) &&
+                    it.parameterTypes[2] == String::class.java &&
+                    it.parameterTypes[3] == Int::class.javaPrimitiveType
             }
             val disable = methods.firstOrNull {
-                it.name == "disable" && it.parameterTypes.contentEquals(
-                    arrayOf(Int::class.javaPrimitiveType, IBinder::class.java, String::class.java)
-                )
+                it.name == "disable" && it.parameterTypes.size == 3 &&
+                    it.parameterTypes[0] == Int::class.javaPrimitiveType &&
+                    IBinder::class.java.isAssignableFrom(it.parameterTypes[1]) &&
+                    it.parameterTypes[2] == String::class.java
+            }
+            if (disableForUser == null && disable == null) {
+                throw NoSuchMethodException("IStatusBarService.disable/disableForUser")
             }
 
-            // Prefer the per-user API; fall back to the original MagicDesk-style
-            // disable() transaction on ROMs whose IStatusBarService differs.
+            // Use the per-user transaction and also the original MagicDesk-style
+            // transaction. Both share the same token, so release clears both.
             if (disableForUser != null) {
-                runCatching { disableForUser.invoke(statusBar, flags, token, attributedPackage, userId) }
-                    .onFailure {
-                        if (disable == null) throw unwrap(it)
-                        disable.invoke(statusBar, flags, token, attributedPackage)
-                    }
-            } else {
-                (disable ?: throw NoSuchMethodException("IStatusBarService.disable/disableForUser"))
-                    .invoke(statusBar, flags, token, attributedPackage)
+                disableForUser.invoke(statusBar, flags, token, attributedPackage, userId)
+            }
+            if (disable != null) {
+                disable.invoke(statusBar, flags, token, attributedPackage)
             }
             if (!enabled) navigationToken = null
             Log.i("SakuDeckNavigation", if (enabled) "Home/Overview disabled for deck session" else "Home/Overview restored")
