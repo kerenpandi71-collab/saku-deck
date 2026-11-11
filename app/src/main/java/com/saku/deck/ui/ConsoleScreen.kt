@@ -348,7 +348,15 @@ private fun TitanNavigationRow(c: DeckController) {
                 Modifier.weight(1f).height(34.dp)
                     .clip(RoundedCornerShape(5.dp))
                     .background(Color(0xFF34383D))
-                    .clickable { c.sendKey(code, true); c.sendKey(code, false) },
+                    .clickable {
+                        if (code == KeyEvent.KEYCODE_BACK) {
+                            c.sendNavigationBack(true)
+                            c.sendNavigationBack(false)
+                        } else {
+                            c.sendKey(code, true)
+                            c.sendKey(code, false)
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(label, color = Color(0xFFE1E3E6), fontSize = 16.sp)
@@ -631,7 +639,7 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
                     if ("select" !in c.hiddenControls) PillButton("SELECT", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_SELECT, it) }
                     if ("start" !in c.hiddenControls) PillButton("START", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_START, it) }
                 }
-                if ("back" !in c.hiddenControls) PillButton("KEMBALI", scale) { c.sendKey(KeyEvent.KEYCODE_BACK, it) }
+                if ("back" !in c.hiddenControls) PillButton("KEMBALI", scale) { c.sendNavigationBack(it) }
                 Column(verticalArrangement = Arrangement.spacedBy((5 * scale).dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     if ("home" !in c.hiddenControls) PillButton("HOME", scale) { c.sendKey(KeyEvent.KEYCODE_HOME, it) }
                     if ("menu" !in c.hiddenControls) PillButton("MENU", scale, accent = true) { if (it) c.openPicker() }
