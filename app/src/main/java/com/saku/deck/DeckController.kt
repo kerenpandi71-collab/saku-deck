@@ -593,23 +593,42 @@ class DeckController(private val app: Application) {
         if (targetDisplay < 0) return
         worker.execute {
             val raw = runCatching { svc.getOpenTasks(targetDisplay) }.getOrDefault("")
-            val entries = raw.lineSequence().mapNotNull { line ->
+            val active = raw.lineSequence().mapNotNull { line ->
                 val parts = line.split(" • ")
                 val taskId = parts.firstOrNull()?.removePrefix("taskId=")?.toIntOrNull()
                     ?: return@mapNotNull null
                 val component = parts.getOrNull(1) ?: return@mapNotNull null
-                val activity = component.substringAfter('/').substringAfterLast('.')
                 RecentTaskEntry(taskId, resolveRecentTaskLabel(component), component)
-            }.distinctBy { it.taskId }
-                .toList()
+            }.distinctBy { it.component }.toList()
+            val saved = loadRecentApps()
+            val merged = (active + saved.filterNot { old -> active.any { it.component == old.component } })
+                .distinctBy { it.component }.take(50)
             main.post {
                 if (displayId != targetDisplay || service !== svc) return@post
-                recentTasks = entries
+                recentTasks = merged
                 recentsOpen = true
                 pickerOpen = false
-                if (entries.isEmpty()) message = "Belum ada aplikasi terbuka pada virtual display."
             }
         }
+    }
+
+    private fun loadRecentApps(): List<RecentTaskEntry> {
+        val prefs = app.getSharedPreferences(RECENT_APPS_PREFS, Context.MODE_PRIVATE)
+        return prefs.getString(RECENT_APPS_KEY, "").orEmpty().lineSequence().mapNotNull { line ->
+            val component = line.substringAfter('|', "")
+            if (component.isBlank()) return@mapNotNull null
+            val label = line.substringBefore('|').ifBlank { resolveRecentTaskLabel(component) }
+            RecentTaskEntry(-1, label, component)
+        }.distinctBy { it.component }.take(50).toList()
+    }
+
+    private fun rememberRecentApp(entry: AppEntry) {
+        val existing = loadRecentApps().filterNot { it.component == entry.component }
+        val updated = (listOf(RecentTaskEntry(-1, entry.label, entry.component)) + existing).take(50)
+        val serialized = updated.joinToString("\n") { "${it.label}|${it.component}" }
+        app.getSharedPreferences(RECENT_APPS_PREFS, Context.MODE_PRIVATE).edit()
+            .putString(RECENT_APPS_KEY, serialized).apply()
+        recentTasks = updated
     }
 
     fun focusRecentTask(entry: RecentTaskEntry) {
@@ -617,12 +636,19 @@ class DeckController(private val app: Application) {
         val targetDisplay = displayId
         if (targetDisplay < 0) return
         worker.execute {
-            val result = runCatching { svc.focusOpenTask(targetDisplay, entry.taskId) }
-                .getOrElse { "Gagal memfokuskan aplikasi: ${it.message}" }
+            val result = if (entry.taskId > 0) {
+                runCatching { svc.focusOpenTask(targetDisplay, entry.taskId) }
+                    .getOrElse { "Task tidak bisa difokuskan: ${it.message}" }
+            } else {
+                runCatching { svc.launchApp(entry.component, targetDisplay) }
+                    .getOrElse { "Gagal membuka aplikasi: ${it.message}" }
+            }
             main.post {
                 if (displayId != targetDisplay || service !== svc) return@post
                 recentsOpen = false
-                message = result
+                pickerOpen = false
+                currentApp = AppEntry(entry.label, entry.component.substringBefore('/'), entry.component)
+                message = result.takeIf { it.contains("Gagal", true) || it.contains("Error", true) }
             }
         }
     }
@@ -671,6 +697,7 @@ class DeckController(private val app: Application) {
         if (id < 0) return
         pickerOpen = false
         currentApp = entry
+        rememberRecentApp(entry)
         virtualFps = 0
         fpsCapturePackage = null
         message = null
