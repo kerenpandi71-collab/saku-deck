@@ -444,6 +444,7 @@ class DeckController(private val app: Application) {
 
         val svc = service
         val wasBinding = binding
+        val stopFpsCapture = fpsCapturePackage != null
         binding = false
         displayId = -1
         displayW = 0
@@ -466,7 +467,7 @@ class DeckController(private val app: Application) {
                     inputWorker.execute {
                         try {
                             if (svc != null) {
-                                if (fpsCapturePackage != null) {
+                                if (stopFpsCapture) {
                                     runCatching { svc.runShell("dumpsys SurfaceFlinger --timestats -disable") }
                                 }
                                 runCatching { svc.releaseDisplay() }
@@ -489,7 +490,7 @@ class DeckController(private val app: Application) {
                     }
                 }.onFailure {
                     if (svc != null) {
-                        if (fpsCapturePackage != null) {
+                        if (stopFpsCapture) {
                             runCatching { svc.runShell("dumpsys SurfaceFlinger --timestats -disable") }
                         }
                         runCatching { svc.releaseDisplay() }
