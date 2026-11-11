@@ -102,11 +102,6 @@ class DeckController(private val app: Application) {
     var trackpadCursorY by mutableFloatStateOf(-1f)
         private set
 
-    // Low-resolution render mode: the virtual display renders at 80% (density
-    // scaled by the same factor so the on-screen layout is unchanged) and
-    // SurfaceFlinger upscales it, cutting real GPU load on low-end chips.
-    var performanceMode by mutableStateOf(loadPerformanceMode())
-        private set
     var landscapeResolutionDialogOpen by mutableStateOf(false)
     var landscapeResolutionEnabled by mutableStateOf(loadLandscapeResolutionEnabled())
         private set
@@ -247,18 +242,6 @@ class DeckController(private val app: Application) {
         message = if (titanPortraitMode) "Mode Unihertz Titan aktif." else "Mode Landscape aktif."
     }
 
-    fun togglePerformanceMode() {
-        performanceMode = !performanceMode
-        app.getSharedPreferences(PERFORMANCE_PREFS, Context.MODE_PRIVATE)
-            .edit().putBoolean("low_resolution", performanceMode).apply()
-        message = if (performanceMode) {
-            "Mode performa aktif: resolusi render virtual display diturunkan untuk FPS stabil."
-        } else {
-            "Mode kualitas penuh aktif."
-        }
-        ensureDisplay()
-    }
-
     fun applyLandscapeResolution(width: Int, height: Int, dpi: Int) {
         if (width !in 640..3840 || height !in 360..2160 || width <= height || dpi !in 120..640) {
             message = "Resolusi Landscape harus 640–3840 × 360–2160, lebar lebih besar dari tinggi, DPI 120–640."
@@ -289,7 +272,7 @@ class DeckController(private val app: Application) {
     }
 
     fun setLandscapeFrameSize(width: Float, height: Float) {
-        landscapeFrameWidth = width.coerceIn(1f, 1.3f)
+        landscapeFrameWidth = width.coerceIn(0.2f, 1.3f)
         landscapeFrameHeight = height.coerceIn(0.65f, 1f)
         app.getSharedPreferences(LANDSCAPE_FRAME_PREFS, Context.MODE_PRIVATE).edit()
             .putFloat("width", landscapeFrameWidth)
@@ -299,28 +282,24 @@ class DeckController(private val app: Application) {
 
     private fun loadLandscapeFrameWidth(): Float =
         app.getSharedPreferences(LANDSCAPE_FRAME_PREFS, Context.MODE_PRIVATE)
-            .getFloat("width", 1f).coerceIn(1f, 1.3f)
+            .getFloat("width", 1f).coerceIn(0.2f, 1.3f)
 
     private fun loadLandscapeFrameHeight(): Float =
         app.getSharedPreferences(LANDSCAPE_FRAME_PREFS, Context.MODE_PRIVATE)
             .getFloat("height", 1f).coerceIn(0.65f, 1f)
 
 
-    private fun loadPerformanceMode(): Boolean =
-        app.getSharedPreferences(PERFORMANCE_PREFS, Context.MODE_PRIVATE)
-            .getBoolean("low_resolution", false)
-
     private fun loadLandscapeResolutionEnabled(): Boolean =
         app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
-            .getBoolean("enabled", false)
+            .getBoolean("enabled", true)
 
     private fun loadLandscapeWidth(): Int =
         app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
-            .getInt("width", 1920)
+            .getInt("width", 960)
 
     private fun loadLandscapeHeight(): Int =
         app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
-            .getInt("height", 1080)
+            .getInt("height", 540)
 
     private fun loadLandscapeDpi(): Int =
         app.getSharedPreferences(LANDSCAPE_RESOLUTION_PREFS, Context.MODE_PRIVATE)
@@ -570,17 +549,13 @@ class DeckController(private val app: Application) {
             pendingEnsure = true
             return
         }
-        val quality = if (performanceMode) PERFORMANCE_RENDER_SCALE else 1f
-        // Custom dimensions are consulted only while the physical host and
-        // SurfaceView are landscape. Portrait always uses its live surface size.
+        // Landscape defaults to 960×540 (540p); portrait continues using
+        // the live host surface dimensions without inheriting Landscape settings.
         val useLandscapeCustom = surfaceW > surfaceH && landscapeResolutionEnabled
-        val baseW = if (useLandscapeCustom) landscapeWidth else surfaceW
-        val baseH = if (useLandscapeCustom) landscapeHeight else surfaceH
-        val baseDpi = if (useLandscapeCustom) landscapeDpi
-            else (app.resources.displayMetrics.densityDpi * DPI_SCALE).toInt().coerceAtLeast(120)
-        val w = ((baseW * quality).toInt() and 1.inv()).coerceAtLeast(64)
-        val h = ((baseH * quality).toInt() and 1.inv()).coerceAtLeast(64)
-        val dpi = (baseDpi * quality).toInt().coerceAtLeast(120)
+        val w = (if (useLandscapeCustom) landscapeWidth else surfaceW).coerceAtLeast(64)
+        val h = (if (useLandscapeCustom) landscapeHeight else surfaceH).coerceAtLeast(64)
+        val dpi = (if (useLandscapeCustom) landscapeDpi
+            else (app.resources.displayMetrics.densityDpi * DPI_SCALE).toInt()).coerceAtLeast(120)
         val existing = displayId
         busy = true
         worker.execute {
@@ -1575,10 +1550,8 @@ class DeckController(private val app: Application) {
         const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         private const val REQUEST_CODE = 7
         private const val TRACKPAD_TOUCH_KEY = "trackpad_cursor"
-        private const val PERFORMANCE_PREFS = "saku_deck_performance"
         private const val LANDSCAPE_RESOLUTION_PREFS = "saku_deck_landscape_resolution"
         private const val LANDSCAPE_FRAME_PREFS = "saku_deck_landscape_frame"
-        private const val PERFORMANCE_RENDER_SCALE = 0.8f
         private const val TRACKPAD_MIN_GAIN = 0.55f
         private const val TRACKPAD_MAX_GAIN = 1.6f
         private const val MAPPING_PREFS = "mobile_legends_touch_mapping"
