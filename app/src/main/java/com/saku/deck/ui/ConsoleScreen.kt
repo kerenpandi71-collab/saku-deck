@@ -169,7 +169,14 @@ fun ConsoleScreen(c: DeckController) {
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             if (c.assistantMenuOpen) {
-                buildList<Pair<String, () -> Unit>> {
+                Column(
+                    Modifier.width(240.dp)
+                        .heightIn(max = maxHeight * 0.72f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    buildList<Pair<String, () -> Unit>> {
                     if (!portraitLayout) {
                         add("UKURAN KOTAK LAYAR" to { c.landscapeFrameDialogOpen = true })
                         add("RESOLUSI CUSTOM LANDSCAPE" to { c.landscapeResolutionDialogOpen = true })
@@ -192,12 +199,19 @@ fun ConsoleScreen(c: DeckController) {
                             c.shutdown { activity.finish() }
                         }
                     })
-                }.forEach { (label, action) ->
-                    Text(label, Modifier.clip(RoundedCornerShape(50))
-                        .background(Color.Black.copy(alpha = 0.88f))
-                        .clickable { action(); c.assistantMenuOpen = false }
-                        .padding(horizontal = 13.dp, vertical = 9.dp),
-                        color = Color.White, fontSize = 10.sp)
+                    }.forEach { (label, action) ->
+                        Text(
+                            label,
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(13.dp))
+                                .background(Color(0xE9161B24))
+                                .clickable { action(); c.assistantMenuOpen = false }
+                                .padding(horizontal = 13.dp, vertical = 11.dp),
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            maxLines = 2,
+                        )
+                    }
                 }
             }
             if ("assistant_bubble" in c.hiddenControls) {
@@ -283,14 +297,14 @@ private fun LandscapeFrameSizeDialog(c: DeckController) {
                         Text("LEBAR KOTAK", Modifier.weight(1f), color = Deck.Ink, fontSize = 12.sp)
                         Text("${(width * 100).toInt()}%", color = Deck.Accent, fontSize = 12.sp)
                     }
-                    Slider(value = width, onValueChange = { width = it }, valueRange = 1f..1.15f)
+                    Slider(value = width, onValueChange = { width = it }, valueRange = 1f..1.3f)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("TINGGI KOTAK", Modifier.weight(1f), color = Deck.Ink, fontSize = 12.sp)
                         Text("${(height * 100).toInt()}%", color = Deck.Accent, fontSize = 12.sp)
                     }
-                    Slider(value = height, onValueChange = { height = it }, valueRange = 0.75f..1f)
+                    Slider(value = height, onValueChange = { height = it }, valueRange = 0.65f..1f)
                 }
             }
         },
