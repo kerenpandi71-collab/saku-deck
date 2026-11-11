@@ -25,7 +25,7 @@ class DeckUserService : IDeckService.Stub() {
     private var callback: Any? = null
     private var displayId = -1
     private var navigationToken: Binder? = null
-    private val navigationPackage = "com.saku.deck"
+    private val navigationPackage = "com.android.shell"
     private var lastInputError = "Belum ada event input yang diuji."
     private var lastInputLogAt = 0L
 
@@ -117,18 +117,38 @@ class DeckUserService : IDeckService.Stub() {
      * automatically drops the flags if the helper process dies.
      */
     private fun setNavigationGuard(enabled: Boolean) {
-        val statusBar = asInterface(
-            STATUS_BAR_SERVICE,
-            systemService("statusbar")
-        )
-        val method = statusBar.javaClass.methods.firstOrNull {
-            it.name == "disableForUser" && it.parameterTypes.size == 4
-        } ?: throw NoSuchMethodException("IStatusBarService.disableForUser(int, IBinder, String, int)")
-
+        val statusBar = asInterface(STATUS_BAR_SERVICE, systemService("statusbar"))
         val token = navigationToken ?: Binder().also { navigationToken = it }
         val flags = if (enabled) DISABLE_HOME or DISABLE_RECENT else 0
+        val userId = Process.myUid() / 100000
         try {
-            method.invoke(statusBar, flags, token, navigationPackage, Process.myUid() / 100000)
+            // Shizuku UserService executes as shell (uid 2000), not as the app.
+            // SystemUI validates the package attribution against the caller UID.
+            val attributedPackage = "com.android.shell"
+            val methods = statusBar.javaClass.methods
+            val disableForUser = methods.firstOrNull {
+                it.name == "disableForUser" && it.parameterTypes.contentEquals(
+                    arrayOf(Int::class.javaPrimitiveType, IBinder::class.java, String::class.java, Int::class.javaPrimitiveType)
+                )
+            }
+            val disable = methods.firstOrNull {
+                it.name == "disable" && it.parameterTypes.contentEquals(
+                    arrayOf(Int::class.javaPrimitiveType, IBinder::class.java, String::class.java)
+                )
+            }
+
+            // Prefer the per-user API; fall back to the original MagicDesk-style
+            // disable() transaction on ROMs whose IStatusBarService differs.
+            if (disableForUser != null) {
+                runCatching { disableForUser.invoke(statusBar, flags, token, attributedPackage, userId) }
+                    .onFailure {
+                        if (disable == null) throw unwrap(it)
+                        disable.invoke(statusBar, flags, token, attributedPackage)
+                    }
+            } else {
+                (disable ?: throw NoSuchMethodException("IStatusBarService.disable/disableForUser"))
+                    .invoke(statusBar, flags, token, attributedPackage)
+            }
             if (!enabled) navigationToken = null
             Log.i("SakuDeckNavigation", if (enabled) "Home/Overview disabled for deck session" else "Home/Overview restored")
         } catch (t: Throwable) {
@@ -300,13 +320,27 @@ class DeckUserService : IDeckService.Stub() {
         exitProcess(0)
     }
 
-    private fun exec(cmd: List<String>): String = try {
-        val p = ProcessBuilder(cmd).redirectErrorStream(true).start()
-        val text = p.inputStream.bufferedReader().readText()
-        p.waitFor()
-        text
-    } catch (t: Throwable) {
-        "Error: $t"
+    private fun exec(cmd: List<String>): String {
+        var process: Process? = null
+        return try {
+            val p = ProcessBuilder(cmd).redirectErrorStream(true).start()
+            process = p
+            val output = StringBuilder()
+            val reader = Thread {
+                runCatching { p.inputStream.bufferedReader().use { output.append(it.readText()) } }
+            }.apply { isDaemon = true; name = "SakuDeckShellReader"; start() }
+
+            if (!p.waitFor(2200, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                p.destroyForcibly()
+                reader.join(150)
+                return "Error: command timed out after 2200ms"
+            }
+            reader.join(250)
+            output.toString()
+        } catch (t: Throwable) {
+            process?.destroyForcibly()
+            "Error: $t"
+        }
     }
 
     companion object {
