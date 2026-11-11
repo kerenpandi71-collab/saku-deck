@@ -76,6 +76,11 @@ import com.saku.deck.ShizukuState
 @Composable
 fun ConsoleScreen(c: DeckController) {
     val hostActivity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    LaunchedEffect(c) {
+        while (true) {
+            delay(1000)
+        }
+    }
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -657,6 +662,18 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
         ) {
             VirtualSurface(c, Modifier.fillMaxSize())
             TrackpadCursor(c)
+            if (!c.titanPortraitMode) {
+                Text(
+                    c.virtualFps.takeIf { it > 0 }?.let { "$it FPS" } ?: "-- FPS",
+                    Modifier.align(Alignment.TopEnd).padding(7.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.72f))
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                    color = Color(0xFFB9D8FF),
+                    fontSize = 9.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
+            }
             if (c.mappingTargetId != null) MappingMarkers(c)
             when {
                 c.shizukuState != ShizukuState.READY -> ShizukuPanel(c)
