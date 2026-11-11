@@ -196,7 +196,7 @@ private fun RecentTasksDialog(c: DeckController) {
                 Column {
                     Text("APLIKASI TERAKHIR", color = Color.White, fontSize = 21.sp,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    Text("Virtual display • ${c.recentTasks.size} aplikasi aktif", color = Color(0xFF9EADBF), fontSize = 11.sp)
+                    Text("Riwayat virtual display • ${c.recentTasks.size} aplikasi", color = Color(0xFF9EADBF), fontSize = 11.sp)
                 }
                 Text("TUTUP", Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF202B3A))
                     .clickable { c.closeRecentTasks() }.padding(horizontal = 18.dp, vertical = 10.dp),
@@ -240,7 +240,7 @@ private fun RecentTaskTvCard(c: DeckController, entry: RecentTaskEntry, landscap
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 2)
             Text(entry.component.substringBefore('/'), color = Color(0xFF9EADBF), fontSize = 9.sp, maxLines = 1)
             Text("BUKA", color = Color(0xFF9CCBFF), fontSize = 9.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-            Text("TUTUP APLIKASI", Modifier.clickable { c.closeRecentTask(entry) }, color = Color(0xFFFFB4A9), fontSize = 8.sp)
+            Text(if (entry.taskId > 0) "TUTUP APLIKASI" else "HAPUS DARI RIWAYAT", Modifier.clickable { c.closeRecentTask(entry) }, color = Color(0xFFFFB4A9), fontSize = 8.sp)
         }
     }
 }
