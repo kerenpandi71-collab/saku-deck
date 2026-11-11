@@ -889,6 +889,9 @@ class DeckController(private val app: Application) {
     // ---- input --------------------------------------------------------------
 
     fun sendKey(keyCode: Int, down: Boolean) {
+        // Overview is disabled for the duration of the Deck session.
+        // Never forward an App Switch key into the virtual display as a fallback.
+        if (keyCode == KeyEvent.KEYCODE_APP_SWITCH) return
         val svc = service ?: return
         val id = displayId
         if (id < 0) return
