@@ -424,28 +424,30 @@ private fun TitanKeyboard(c: DeckController) {
                         Modifier.weight(if (wide) 1.35f else 1f).height(34.dp)
                             .clip(RoundedCornerShape(4.dp))
                             .background(Color(0xFF454A50))
-                            .pointerInput(key, symbols, shifted) {
+                            .then(
                                 if (key == "⌫") {
-                                    detectTapGestures(onPress = {
-                                        val startedAt = android.os.SystemClock.uptimeMillis()
-                                        val deleteJob = repeatScope.launch {
-                                            delay(420)
-                                            while (true) {
-                                                c.sendBackspace(1)
-                                                delay(65)
+                                    Modifier.pointerInput(symbols) {
+                                        detectTapGestures(onPress = {
+                                            val startedAt = android.os.SystemClock.uptimeMillis()
+                                            val deleteJob = repeatScope.launch {
+                                                delay(420)
+                                                while (true) {
+                                                    c.sendBackspace(1)
+                                                    delay(65)
+                                                }
                                             }
-                                        }
-                                        try {
-                                            tryAwaitRelease()
-                                        } finally {
-                                            deleteJob.cancel()
-                                            if (android.os.SystemClock.uptimeMillis() - startedAt < 420L) {
-                                                c.sendBackspace(1)
+                                            try {
+                                                tryAwaitRelease()
+                                            } finally {
+                                                deleteJob.cancel()
+                                                if (android.os.SystemClock.uptimeMillis() - startedAt < 420L) {
+                                                    c.sendBackspace(1)
+                                                }
                                             }
-                                        }
-                                    })
+                                        })
+                                    }
                                 } else {
-                                    detectTapGestures(onTap = {
+                                    Modifier.clickable {
                                         when (key) {
                                             "⇧" -> shifted = !shifted
                                             else -> {
@@ -459,9 +461,9 @@ private fun TitanKeyboard(c: DeckController) {
                                                 if (shifted) shifted = false
                                             }
                                         }
-                                    })
+                                    }
                                 }
-                            },
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
