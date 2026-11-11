@@ -597,7 +597,7 @@ class DeckController(private val app: Application) {
                     ?: return@mapNotNull null
                 val component = parts.getOrNull(1) ?: return@mapNotNull null
                 val activity = component.substringAfter('/').substringAfterLast('.')
-                RecentTaskEntry(taskId, activity, component)
+                RecentTaskEntry(taskId, resolveRecentTaskLabel(component), component)
             }.distinctBy { it.taskId }
             main.post {
                 if (displayId != targetDisplay || service !== svc) return@post
@@ -637,7 +637,7 @@ class DeckController(private val app: Application) {
                 val taskId = parts.firstOrNull()?.removePrefix("taskId=")?.toIntOrNull()
                     ?: return@mapNotNull null
                 val component = parts.getOrNull(1) ?: return@mapNotNull null
-                RecentTaskEntry(taskId, component.substringAfter('/').substringAfterLast('.'), component)
+                RecentTaskEntry(taskId, resolveRecentTaskLabel(component), component)
             }.distinctBy { it.taskId }
             main.post {
                 if (displayId != targetDisplay || service !== svc) return@post
@@ -649,6 +649,12 @@ class DeckController(private val app: Application) {
 
     fun closeRecentTasks() {
         recentsOpen = false
+    }
+
+    private fun resolveRecentTaskLabel(component: String): String {
+        val name = ComponentName.unflattenFromString(component) ?: return component
+        return runCatching { app.packageManager.getActivityInfo(name, 0).loadLabel(app.packageManager).toString() }
+            .getOrDefault(name.packageName)
     }
 
     fun closePicker() {
