@@ -100,10 +100,12 @@ class DeckController(private val app: Application) {
     fun refreshVirtualFps() {
         val svc = service ?: run {
             virtualFps = 0
+            fpsCapturePackage = null
             return
         }
         val pkg = currentApp?.packageName ?: run {
             virtualFps = 0
+            fpsCapturePackage = null
             return
         }
         if (!fpsQueryRunning.compareAndSet(false, true)) return
@@ -112,33 +114,32 @@ class DeckController(private val app: Application) {
             try {
                 val measured = runCatching {
                     if (fpsCapturePackage != pkg) {
-                        // Reset the counter when the foreground virtual-display app changes.
+                        // Start a new cumulative TimeStats window only when the
+                        // foreground virtual-display app changes. Clearing it on
+                        // every one-second poll caused intermittent empty samples.
                         val enabled = svc.runShell(
                             "dumpsys SurfaceFlinger --timestats -clear -enable"
                         )
                         if (enabled.contains("Error:", ignoreCase = true)) {
                             fpsCapturePackage = null
-                            return@runCatching 0
+                            return@runCatching null
                         }
                         fpsCapturePackage = pkg
-                        return@runCatching 0 // let the next poll collect real frame samples
+                        return@runCatching null
                     }
 
                     val dump = svc.runShell("dumpsys SurfaceFlinger --timestats -dump")
-                    val fps = parseSurfaceFlingerAverageFps(dump, pkg) ?: 0
-                    // Clear and restart after each sample so the next overlay update
-                    // reflects a fresh interval instead of a lifetime average.
-                    val restarted = svc.runShell(
-                        "dumpsys SurfaceFlinger --timestats -clear -enable"
-                    )
-                    if (restarted.contains("Error:", ignoreCase = true)) {
-                        fpsCapturePackage = null
-                    }
-                    fps
-                }.getOrDefault(0)
+                    parseSurfaceFlingerAverageFps(dump, pkg)
+                }.getOrNull()
 
                 main.post {
-                    virtualFps = measured.coerceIn(0, 240)
+                    // Ignore late results from an app switch or a disconnected service.
+                    if (service !== svc || currentApp?.packageName != pkg) return@post
+                    // Keep the last good reading when SurfaceFlinger briefly returns
+                    // an empty/zero layer sample. Reset only when the target app changes.
+                    if (measured != null && measured > 0) {
+                        virtualFps = measured.coerceIn(0, 240)
+                    }
                 }
             } finally {
                 fpsQueryRunning.set(false)
@@ -149,24 +150,26 @@ class DeckController(private val app: Application) {
     private fun parseSurfaceFlingerAverageFps(dump: String, packageName: String): Int? {
         if (dump.isBlank() || dump.contains("Error:", ignoreCase = true)) return null
 
-        // TimeStats emits one block per layer. Match packageName first, then
-        // layerName for vendor builds that omit the packageName field.
+        // SurfaceFlinger reports separate TimeStats blocks for each rendered layer.
+        // Aggregate all layers belonging to the package so apps using multiple
+        // SurfaceView/Compose layers on the virtual display remain detectable.
         val blocks = dump.split(Regex("(?m)(?=^\\s*layerName\\s*=)"))
         val packagePattern = Regex(
             "(?m)^\\s*packageName\\s*=\\s*${Regex.escape(packageName)}\\s*$"
         )
-        val block = blocks.firstOrNull { packagePattern.containsMatchIn(it) }
-            ?: blocks.firstOrNull {
-                it.contains(packageName, ignoreCase = false) &&
-                    it.contains("layerName", ignoreCase = true)
+        val fpsValues = blocks.asSequence()
+            .filter { packagePattern.containsMatchIn(it) ||
+                (it.contains(packageName) && it.contains("layerName", ignoreCase = true)) }
+            .mapNotNull { block ->
+                Regex("(?m)^\\s*averageFPS\\s*=\\s*([0-9]+(?:\\.[0-9]+)?)")
+                    .find(block)?.groupValues?.getOrNull(1)?.toFloatOrNull()
             }
-            ?: return null
+            .filter { it.isFinite() && it > 0f }
+            .toList()
 
-        val value = Regex("(?m)^\\s*averageFPS\\s*=\\s*([0-9]+(?:\\.[0-9]+)?)")
-            .find(block)?.groupValues?.getOrNull(1)?.toFloatOrNull()
-            ?: return null
-        if (!value.isFinite() || value <= 0f) return null
-        return kotlin.math.round(value).toInt()
+        // The highest active layer FPS is more useful than averaging unrelated
+        // UI/video layers with the app's main interactive surface.
+        return fpsValues.maxOrNull()?.let { kotlin.math.round(it).toInt() }
     }
 
     fun toggleTitanPortraitMode() {
@@ -532,6 +535,8 @@ class DeckController(private val app: Application) {
         if (id < 0) return
         pickerOpen = false
         currentApp = entry
+        virtualFps = 0
+        fpsCapturePackage = null
         message = null
         worker.execute {
             val out = runCatching { svc.launchApp(entry.component, id) }
@@ -880,6 +885,26 @@ class DeckController(private val app: Application) {
         inject(svc, ev, id)
     }
 
+    /** Sends standard desktop editing shortcuts to the focused editor on the virtual display. */
+    fun sendShortcut(keyCode: Int) {
+        val svc = service ?: return
+        val id = displayId
+        if (id < 0) return
+        val now = SystemClock.uptimeMillis()
+        val meta = KeyEvent.META_CTRL_ON
+        val down = KeyEvent(
+            now, now, KeyEvent.ACTION_DOWN, keyCode, 0, meta,
+            KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD
+        )
+        val upTime = SystemClock.uptimeMillis()
+        val up = KeyEvent(
+            now, upTime, KeyEvent.ACTION_UP, keyCode, 0, meta,
+            KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD
+        )
+        inject(svc, down, id)
+        inject(svc, up, id)
+    }
+
     /** A skill-wheel button holds the mapped contact, moves it while dragged, then releases it. */
     fun sendSkillWheel(keyCode: Int, dragX: Float, dragY: Float, pressed: Boolean) {
         val mapping = touchMappings.firstOrNull { it.keyCode == keyCode }
@@ -1142,9 +1167,10 @@ class DeckController(private val app: Application) {
         if (!pickerOpen && displayId >= 0) {
             sendKey(KeyEvent.KEYCODE_BACK, true)
             sendKey(KeyEvent.KEYCODE_BACK, false)
-            return true
         }
-        return false
+        // Keep the host deck in the foreground. Exiting is an explicit action
+        // from the assistant bubble, not an accidental Android Back press.
+        return true
     }
 
     companion object {
