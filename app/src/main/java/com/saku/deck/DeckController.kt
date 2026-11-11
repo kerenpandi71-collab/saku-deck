@@ -93,124 +93,116 @@ class DeckController(private val app: Application) {
         private set
 
     /**
-     * Collect per-layer frame timing from SurfaceFlinger's TimeStats using the
-     * Shizuku UserService (shell identity). The reported averageFPS is computed
-     * from present-to-present intervals, not the panel refresh rate.
+     * Measure the foreground app's real SurfaceFlinger presentation cadence.
+     * Each sample is validated against monotonic time so a frozen layer or
+     * stale latency ring cannot leave an old FPS value on screen.
      */
     fun refreshVirtualFps() {
-        val svc = service ?: run {
+        val svc = service
+        val pkg = currentApp?.packageName
+        if (svc == null || pkg == null || displayId < 0) {
             virtualFps = 0
             fpsCapturePackage = null
+            fpsLastValidAtMs = 0L
             return
         }
-        val pkg = currentApp?.packageName ?: run {
+        if (fpsCapturePackage != pkg) {
+            fpsCapturePackage = pkg
+            fpsLastValidAtMs = 0L
             virtualFps = 0
-            fpsCapturePackage = null
-            return
         }
         if (!fpsQueryRunning.compareAndSet(false, true)) return
 
         fpsWorker.execute {
-            try {
-                val measured = runCatching {
-                    if (fpsCapturePackage != pkg) {
-                        // Keep TimeStats as a fallback, but do not depend on its
-                        // packageName metadata: many Android builds omit it for
-                        // app layers on virtual displays.
-                        svc.runShell("dumpsys SurfaceFlinger --timestats -clear -enable")
-                        fpsCapturePackage = pkg
-                    }
-                    captureSurfaceFlingerLayerFps(svc, pkg)
-                        ?: parseSurfaceFlingerAverageFps(
-                            svc.runShell("dumpsys SurfaceFlinger --timestats -dump"), pkg
-                        )
-                }.getOrNull()
-
-                main.post {
-                    // Ignore late results from an app switch or a disconnected service.
-                    if (service !== svc || currentApp?.packageName != pkg) return@post
-                    if (measured != null && measured > 0) {
-                        virtualFps = measured.coerceIn(0, 240)
-                    }
-                }
-            } finally {
-                fpsQueryRunning.set(false)
+            val measured = try {
+                captureSurfaceFlingerLayerFps(svc, pkg)
+            } catch (_: Throwable) {
+                null
             }
+            main.post {
+                if (service !== svc || currentApp?.packageName != pkg || displayId < 0) return@post
+                val now = SystemClock.elapsedRealtime()
+                if (measured != null) {
+                    virtualFps = measured.coerceIn(0, 240)
+                    fpsLastValidAtMs = now
+                } else if (fpsLastValidAtMs == 0L || now - fpsLastValidAtMs > 2200L) {
+                    // Do not freeze the last good number indefinitely when the
+                    // game stops rendering, is backgrounded, or changes layers.
+                    virtualFps = 0
+                }
+            }
+            fpsQueryRunning.set(false)
         }
     }
 
-    /**
-     * Read the actual-present timestamps of the app's SurfaceFlinger layers.
-     * This is important for Saku Deck: the game is composed on a virtual
-     * display, so measuring the host Activity's Choreographer would report
-     * the console UI cadence instead of the game cadence.
-     */
+    private data class LayerFpsSample(
+        val fps: Int,
+        val frameCount: Int,
+        val latestPresentNs: Long,
+        val layerName: String,
+    )
+
     private fun captureSurfaceFlingerLayerFps(svc: IDeckService, packageName: String): Int? {
         val listing = svc.runShell("dumpsys SurfaceFlinger --list")
-        if (listing.isBlank() || listing.contains("Error:", ignoreCase = true)) return null
+        if (listing.isBlank() || listing.startsWith("Error:", ignoreCase = true)) return null
 
+        // SurfaceView/BLAST layers are normally the app's continuously rendered
+        // content. Limit shell round-trips so an app with many child layers
+        // cannot stall the polling worker.
         val layers = listing.lineSequence()
             .map { it.trim() }
             .filter { it.isNotEmpty() && it.contains(packageName, ignoreCase = true) }
             .distinct()
-            .take(8)
+            .sortedByDescending { if (it.contains("SurfaceView", true) || it.contains("BLAST", true)) 1 else 0 }
+            .take(5)
             .toList()
         if (layers.isEmpty()) return null
 
+        val nowNs = SystemClock.elapsedRealtimeNanos()
         val samples = layers.mapNotNull { layer ->
-            // Layer names are returned by SurfaceFlinger itself. Quote the value
-            // as one shell argument so spaces/brackets in names are preserved.
             val safeLayer = layer.replace("'", "'\\''")
-            val latency = svc.runShell("dumpsys SurfaceFlinger --latency '$safeLayer'")
-            parseSurfaceFlingerLatencyFps(latency)
+            val output = svc.runShell("dumpsys SurfaceFlinger --latency '$safeLayer'")
+            parseSurfaceFlingerLatencySample(output, layer, nowNs)
         }
-        return samples.maxOrNull()
+        // Prefer the layer with the most recent frames, then the largest sample
+        // window. This avoids choosing an unrelated tiny animation layer merely
+        // because its short interval happens to calculate a higher FPS.
+        return samples.maxWithOrNull(
+            compareBy<LayerFpsSample> { it.frameCount }
+                .thenBy { it.latestPresentNs }
+                .thenBy { it.fps }
+        )?.fps
     }
 
-    private fun parseSurfaceFlingerLatencyFps(output: String): Int? {
-        if (output.isBlank() || output.contains("Error:", ignoreCase = true)) return null
-        val presentTimes = output.lineSequence()
-            .drop(1) // First line is the display refresh period, not a frame timestamp.
-            .mapNotNull { line ->
-                val columns = line.trim().split(Regex("\\s+"))
-                if (columns.size < 3) null else columns[1].toLongOrNull()
-            }
-            .filter { it > 0L && it < Long.MAX_VALUE }
+    private fun parseSurfaceFlingerLatencySample(
+        output: String,
+        layerName: String,
+        nowNs: Long,
+    ): LayerFpsSample? {
+        if (output.isBlank() || output.startsWith("Error:", ignoreCase = true)) return null
+        val rows = output.lineSequence().drop(1).mapNotNull { line ->
+            val columns = line.trim().split(Regex("\\s+"))
+            if (columns.size < 3) null else columns[1].toLongOrNull()
+        }.filter { it > 0L && it <= nowNs + 100_000_000L }
             .distinct()
             .sorted()
             .toList()
 
-        if (presentTimes.size < 2) return null
-        // Use the newest 60 presented frames to keep the overlay responsive
-        // while smoothing single-frame scheduling jitter.
-        val window = presentTimes.takeLast(60)
+        // Ignore entries older than 2.2 seconds: SurfaceFlinger keeps a ring
+        // buffer, so sorting the whole buffer otherwise reports historical FPS.
+        val fresh = rows.filter { nowNs - it <= 2_200_000_000L }
+        if (fresh.size < 4) return null
+        val window = fresh.takeLast(60)
         val elapsedNs = window.last() - window.first()
         if (elapsedNs <= 0L) return null
         val fps = (window.size - 1) * 1_000_000_000.0 / elapsedNs.toDouble()
-        return fps.takeIf { it.isFinite() && it > 0.0 }?.let { kotlin.math.round(it).toInt() }
-    }
-
-    private fun parseSurfaceFlingerAverageFps(dump: String, packageName: String): Int? {
-        if (dump.isBlank() || dump.contains("Error:", ignoreCase = true)) return null
-
-        // Fallback for ROMs where --latency is unavailable. Some builds expose
-        // packageName as a separate field; others only include it in layerName.
-        val blocks = dump.split(Regex("(?m)(?=^\\s*layerName\\s*=)"))
-        val packagePattern = Regex(
-            "(?m)^\\s*packageName\\s*=\\s*${Regex.escape(packageName)}\\s*$"
+        if (!fps.isFinite() || fps <= 0.0) return null
+        return LayerFpsSample(
+            fps = kotlin.math.round(fps).toInt().coerceIn(1, 240),
+            frameCount = window.size,
+            latestPresentNs = window.last(),
+            layerName = layerName,
         )
-        val fpsValues = blocks.asSequence()
-            .filter {
-                packagePattern.containsMatchIn(it) ||
-                    it.contains(packageName, ignoreCase = true) && it.contains("layerName", ignoreCase = true)
-            }
-            .mapNotNull { block ->
-                Regex("(?m)^\\s*averageFPS\\s*=\\s*([0-9]+(?:\\.[0-9]+)?)")
-                    .find(block)?.groupValues?.getOrNull(1)?.toFloatOrNull()
-            }
-            .filter { it.isFinite() && it > 0f }
-            .toList()
-        return fpsValues.maxOrNull()?.let { kotlin.math.round(it).toInt() }
     }
 
     fun toggleTitanPortraitMode() {
@@ -255,6 +247,7 @@ class DeckController(private val app: Application) {
     private val fpsWorker = Executors.newSingleThreadExecutor()
     private val fpsQueryRunning = AtomicBoolean(false)
     @Volatile private var fpsCapturePackage: String? = null
+    @Volatile private var fpsLastValidAtMs: Long = 0L
     private val main = Handler(Looper.getMainLooper())
 
     private var surface: Surface? = null
@@ -294,6 +287,7 @@ class DeckController(private val app: Application) {
         override fun onServiceDisconnected(name: ComponentName?) {
             service = null
             fpsCapturePackage = null
+            fpsLastValidAtMs = 0L
             main.post {
                 binding = false
                 virtualFps = 0
@@ -311,6 +305,7 @@ class DeckController(private val app: Application) {
             main.post {
                 service = null
                 fpsCapturePackage = null
+                fpsLastValidAtMs = 0L
                 binding = false
                 virtualFps = 0
                 displayId = -1
@@ -496,6 +491,7 @@ class DeckController(private val app: Application) {
         currentApp = null
         virtualFps = 0
         fpsCapturePackage = null
+        fpsLastValidAtMs = 0L
         pickerOpen = true
         busy = false
         keyDownTimes.clear()
