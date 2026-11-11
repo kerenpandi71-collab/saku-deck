@@ -125,7 +125,16 @@ class DeckController(private val app: Application) {
                     }
 
                     val dump = svc.runShell("dumpsys SurfaceFlinger --timestats -dump")
-                    parseSurfaceFlingerAverageFps(dump, pkg) ?: 0
+                    val fps = parseSurfaceFlingerAverageFps(dump, pkg) ?: 0
+                    // Clear and restart after each sample so the next overlay update
+                    // reflects a fresh interval instead of a lifetime average.
+                    val restarted = svc.runShell(
+                        "dumpsys SurfaceFlinger --timestats -clear -enable"
+                    )
+                    if (restarted.contains("Error:", ignoreCase = true)) {
+                        fpsCapturePackage = null
+                    }
+                    fps
                 }.getOrDefault(0)
 
                 main.post {
@@ -240,8 +249,10 @@ class DeckController(private val app: Application) {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             service = null
+            fpsCapturePackage = null
             main.post {
                 binding = false
+                virtualFps = 0
                 displayId = -1
                 currentApp = null
                 pickerOpen = true
@@ -454,7 +465,12 @@ class DeckController(private val app: Application) {
                 runCatching {
                     inputWorker.execute {
                         try {
-                            if (svc != null) runCatching { svc.releaseDisplay() }
+                            if (svc != null) {
+                                if (fpsCapturePackage != null) {
+                                    runCatching { svc.runShell("dumpsys SurfaceFlinger --timestats -disable") }
+                                }
+                                runCatching { svc.releaseDisplay() }
+                            }
                             if (wasBinding || svc != null) {
                                 runCatching { Shizuku.unbindUserService(userServiceArgs, connection, true) }
                             }
@@ -472,7 +488,12 @@ class DeckController(private val app: Application) {
                         }
                     }
                 }.onFailure {
-                    if (svc != null) runCatching { svc.releaseDisplay() }
+                    if (svc != null) {
+                        if (fpsCapturePackage != null) {
+                            runCatching { svc.runShell("dumpsys SurfaceFlinger --timestats -disable") }
+                        }
+                        runCatching { svc.releaseDisplay() }
+                    }
                     if (wasBinding || svc != null) runCatching {
                         Shizuku.unbindUserService(userServiceArgs, connection, true)
                     }
@@ -481,7 +502,12 @@ class DeckController(private val app: Application) {
             }
         }.onFailure {
             // Best-effort fallback if the worker is no longer accepting tasks.
-            if (svc != null) runCatching { svc.releaseDisplay() }
+            if (svc != null) {
+                if (fpsCapturePackage != null) {
+                    runCatching { svc.runShell("dumpsys SurfaceFlinger --timestats -disable") }
+                }
+                runCatching { svc.releaseDisplay() }
+            }
             if (wasBinding || svc != null) runCatching {
                 Shizuku.unbindUserService(userServiceArgs, connection, true)
             }
