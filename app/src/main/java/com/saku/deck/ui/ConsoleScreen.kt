@@ -183,7 +183,6 @@ fun ConsoleScreen(c: DeckController) {
                         add("RESOLUSI CUSTOM LANDSCAPE" to { c.landscapeResolutionDialogOpen = true })
                     }
                     add("ROTASI OTOMATIS ANDROID" to { c.assistantMenuOpen = false })
-                    add((if (c.performanceMode) "MODE KUALITAS PENUH" else "MODE PERFORMA") to { c.togglePerformanceMode() })
                     add((if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() })
                     add((if (c.externalKeyboardOpen) "TUTUP KEYBOARD LUAR" else "KEYBOARD LUAR") to {
                         c.updateExternalKeyboardOpen(!c.externalKeyboardOpen)
@@ -298,7 +297,7 @@ private fun LandscapeFrameSizeDialog(c: DeckController) {
                         Text("LEBAR KOTAK", Modifier.weight(1f), color = Deck.Ink, fontSize = 12.sp)
                         Text("${(width * 100).toInt()}%", color = Deck.Accent, fontSize = 12.sp)
                     }
-                    Slider(value = width, onValueChange = { width = it }, valueRange = 1f..1.3f)
+                    Slider(value = width, onValueChange = { width = it }, valueRange = 0.2f..1.3f)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
