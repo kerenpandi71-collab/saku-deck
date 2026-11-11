@@ -369,8 +369,6 @@ class DeckUserService : IDeckService.Stub() {
         private const val SUPPORTS_TOUCH = 1 shl 6
         private const val DESTROY_CONTENT_ON_REMOVAL = 1 shl 8
         private const val TRUSTED = 1 shl 10
-        private const val OWN_DISPLAY_GROUP = 1 shl 11
-        private const val ALWAYS_UNLOCKED = 1 shl 12
         private const val TOUCH_FEEDBACK_DISABLED = 1 shl 13
         private const val OWN_FOCUS = 1 shl 14
         private const val DEVICE_DISPLAY_GROUP = 1 shl 15
@@ -382,7 +380,7 @@ class DeckUserService : IDeckService.Stub() {
         // Avoid OWN_FOCUS and DEVICE_DISPLAY_GROUP: both alter system focus/display
         // grouping and are unnecessary for a touch-capable app-hosting display.
         private val FLAG_SETS = intArrayOf(
-            BASE or TRUSTED or OWN_DISPLAY_GROUP or ALWAYS_UNLOCKED or TOUCH_FEEDBACK_DISABLED,
+            BASE or TRUSTED or TOUCH_FEEDBACK_DISABLED,
             BASE or TRUSTED,
             BASE,
         )
