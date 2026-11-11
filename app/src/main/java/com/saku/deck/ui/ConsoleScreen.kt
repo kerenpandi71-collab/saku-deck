@@ -63,12 +63,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.detectTapGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.positionChange
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import com.saku.deck.DeckController
 import com.saku.deck.ShizukuState
 
@@ -289,7 +287,6 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
 }
 
 @Composable
-@Composable
 private fun TitanStatusStrip(c: DeckController) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -326,6 +323,7 @@ private fun TitanStatusStrip(c: DeckController) {
     }
 }
 
+@Composable
 private fun TitanNavigationRow(c: DeckController) {
     // Keep only the two navigation controls requested: Back and Home.
     Row(
@@ -388,31 +386,26 @@ private fun TitanKeyboard(c: DeckController) {
                             .clip(RoundedCornerShape(4.dp))
                             .background(Color(0xFF454A50))
                             .pointerInput(key, symbols, shifted) {
+                                val pointerScope = this
                                 if (key == "⌫") {
-                                    awaitEachGesture {
-                                        val down = awaitFirstDown(requireUnconsumed = false)
-                                        down.consume()
-                                        val deleteJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.currentCoroutineContext()).launch {
+                                    detectTapGestures(onPress = {
+                                        val startedAt = android.os.SystemClock.uptimeMillis()
+                                        val deleteJob = pointerScope.launch {
                                             delay(420)
                                             while (true) {
                                                 c.sendBackspace(1)
                                                 delay(65)
                                             }
                                         }
-                                        var released = false
                                         try {
-                                            while (!released) {
-                                                val event = awaitPointerEvent()
-                                                val change = event.changes.firstOrNull { it.id == down.id }
-                                                if (change == null || !change.pressed) released = true
-                                                event.changes.forEach { it.consume() }
-                                            }
+                                            tryAwaitRelease()
                                         } finally {
-                                            val held = android.os.SystemClock.uptimeMillis() - down.uptimeMillis
                                             deleteJob.cancel()
-                                            if (held < 420L) c.sendBackspace(1)
+                                            if (android.os.SystemClock.uptimeMillis() - startedAt < 420L) {
+                                                c.sendBackspace(1)
+                                            }
                                         }
-                                    }
+                                    })
                                 } else {
                                     detectTapGestures(onTap = {
                                         when (key) {
