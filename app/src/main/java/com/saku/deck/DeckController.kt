@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.saku.deck.service.DeckUserService
 import rikka.shizuku.Shizuku
+import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -68,6 +69,7 @@ class DeckController(private val app: Application) {
         private set
     var controlSizeMenuOpen by mutableStateOf(false)
     var mappingMenuOpen by mutableStateOf(false)
+    var logDialogOpen by mutableStateOf(false)
     var mappingTargetId by mutableStateOf<String?>(null)
     var controlLayoutEditing by mutableStateOf(false)
         private set
@@ -843,6 +845,16 @@ class DeckController(private val app: Application) {
     fun resetControlLayout() {
         controlPositions = DEFAULT_CONTROL_POSITIONS
         message = "Layout awal dipulihkan. Tekan SIMPAN untuk menyimpan."
+    }
+
+    private val logFile by lazy { File(app.filesDir, "saku_log.txt") }
+
+    fun errorLog(): String = runCatching {
+        logFile.takeIf { it.exists() }?.readText()
+    }.getOrNull()?.trim().takeIf { !it.isNullOrEmpty() } ?: "Belum ada log error."
+
+    fun clearErrorLog() {
+        runCatching { logFile.delete() }
     }
 
     fun updateExternalKeyboardOpen(open: Boolean) {

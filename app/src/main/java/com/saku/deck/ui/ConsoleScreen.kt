@@ -1,14 +1,19 @@
 package com.saku.deck.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
+import android.view.ViewConfiguration
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -50,6 +55,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -59,9 +65,11 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -134,6 +142,7 @@ fun ConsoleScreen(c: DeckController) {
                     "VISIBILITAS" to { c.visibilityMenuOpen = true },
                     "UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true },
                     "ATUR POSISI" to { c.beginControlLayoutEdit() },
+                    "LOG ERROR" to { c.logDialogOpen = true },
                     "KELUAR DARI SAKU DECK" to {
                         hostActivity?.let { activity ->
                             // Finish only after the virtual display is released,
@@ -183,7 +192,37 @@ fun ConsoleScreen(c: DeckController) {
         if (c.controlSizeMenuOpen) ControlSizeDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
         if (c.mappingMenuOpen) MappingDialog(c)
+        if (c.logDialogOpen) ErrorLogDialog(c)
     }
+}
+
+@Composable
+private fun ErrorLogDialog(c: DeckController) {
+    val ctx = LocalContext.current
+    AlertDialog(
+        onDismissRequest = { c.logDialogOpen = false },
+        title = { Text("Log error") },
+        text = {
+            Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                Text(c.errorLog(), color = Deck.Ink, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                runCatching {
+                    val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Saku Deck log", c.errorLog()))
+                }
+                c.message = "Log error tersalin."
+            }) { Text("SALIN") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { c.clearErrorLog() }) { Text("HAPUS") }
+                TextButton(onClick = { c.logDialogOpen = false }) { Text("TUTUP") }
+            }
+        },
+    )
 }
 
 @Composable
@@ -214,13 +253,13 @@ private fun RecentTasksDialog(c: DeckController) {
                 LazyRow(Modifier.fillMaxWidth().weight(1f),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 4.dp, end = 4.dp, top = 22.dp, bottom = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    items(c.recentTasks, key = { it.taskId }) { entry -> RecentTaskTvCard(c, entry, true) }
+                    items(c.recentTasks, key = { "${it.taskId}:${it.component}" }) { entry -> RecentTaskTvCard(c, entry, true) }
                 }
             } else {
                 LazyColumn(Modifier.fillMaxWidth().weight(1f),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 18.dp, bottom = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(c.recentTasks, key = { it.taskId }) { entry -> RecentTaskTvCard(c, entry, false) }
+                    items(c.recentTasks, key = { "${it.taskId}:${it.component}" }) { entry -> RecentTaskTvCard(c, entry, false) }
                 }
             }
         }
@@ -403,11 +442,35 @@ private fun TitanStatusStrip(c: DeckController) {
     }
 }
 
+/** Tap that only fires when the finger barely moves, so fast typing never
+ *  drifts into the navigation strip sitting right above the keyboard. */
+private fun Modifier.steadyTap(onTap: () -> Unit): Modifier = composed {
+    val slop = ViewConfiguration.get(LocalContext.current).scaledTouchSlop * 3f
+    pointerInput(Unit) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            var travelled = 0f
+            var lifted = false
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                travelled += change.positionChange().getDistance()
+                if (!change.pressed) {
+                    lifted = true
+                    break
+                }
+            }
+            if (lifted && travelled <= slop) onTap()
+        }
+    }
+}
+
 @Composable
 private fun TitanNavigationRow(c: DeckController) {
     // Navigation stays scoped to the virtual display: Back, Deck Home, and Deck Recents.
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 34.dp),
+        Modifier.fillMaxWidth().heightIn(min = 34.dp)
+            .systemGestureExclusion(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         listOf(
@@ -419,7 +482,7 @@ private fun TitanNavigationRow(c: DeckController) {
                 Modifier.weight(1f).height(34.dp)
                     .clip(RoundedCornerShape(5.dp))
                     .background(Color(0xFF34383D))
-                    .clickable {
+                    .steadyTap {
                         when (code) {
                             KeyEvent.KEYCODE_BACK -> {
                                 c.sendNavigationBack(true)
@@ -462,6 +525,7 @@ private fun TitanKeyboard(c: DeckController) {
 
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
+            .systemGestureExclusion()
             .background(Color(0xFF24272B)).padding(3.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
@@ -513,7 +577,7 @@ private fun TitanKeyboard(c: DeckController) {
                                         })
                                     }
                                 } else {
-                                    Modifier.clickable {
+                                    Modifier.steadyTap {
                                         when (key) {
                                             "⇧" -> shifted = !shifted
                                             else -> {
@@ -565,7 +629,7 @@ private fun TitanKeyboard(c: DeckController) {
 private fun TitanUtilityKey(label: String, modifier: Modifier, onClick: () -> Unit) {
     Box(
         modifier.height(31.dp).clip(RoundedCornerShape(4.dp))
-            .background(Color(0xFF454A50)).clickable(onClick = onClick),
+            .background(Color(0xFF454A50)).steadyTap(onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = Color(0xFFE7E9EB), fontSize = 9.sp)
