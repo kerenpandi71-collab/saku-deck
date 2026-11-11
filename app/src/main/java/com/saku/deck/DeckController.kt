@@ -603,6 +603,7 @@ class DeckController(private val app: Application) {
             val saved = loadRecentApps()
             val merged = (active + saved.filterNot { old -> active.any { it.component == old.component } })
                 .distinctBy { it.component }.take(50)
+            persistRecentApps(merged)
             main.post {
                 if (displayId != targetDisplay || service !== svc) return@post
                 recentTasks = merged
@@ -622,12 +623,16 @@ class DeckController(private val app: Application) {
         }.distinctBy { it.component }.take(50).toList()
     }
 
+    private fun persistRecentApps(entries: List<RecentTaskEntry>) {
+        val serialized = entries.take(50).joinToString("\\n") { "${it.label}|${it.component}" }
+        app.getSharedPreferences(RECENT_APPS_PREFS, Context.MODE_PRIVATE).edit()
+            .putString(RECENT_APPS_KEY, serialized).apply()
+    }
+
     private fun rememberRecentApp(entry: AppEntry) {
         val existing = loadRecentApps().filterNot { it.component == entry.component }
         val updated = (listOf(RecentTaskEntry(-1, entry.label, entry.component)) + existing).take(50)
-        val serialized = updated.joinToString("\n") { "${it.label}|${it.component}" }
-        app.getSharedPreferences(RECENT_APPS_PREFS, Context.MODE_PRIVATE).edit()
-            .putString(RECENT_APPS_KEY, serialized).apply()
+        persistRecentApps(updated)
         recentTasks = updated
     }
 
