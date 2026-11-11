@@ -84,6 +84,15 @@ class DeckController(private val app: Application) {
     var virtualFps by mutableIntStateOf(0)
         private set
 
+    // Blue aim indicator mirrors Virtual Display Touch: it follows the active
+    // skill-wheel contact in virtual-display normalized coordinates.
+    var skillAimActive by mutableStateOf(false)
+        private set
+    var skillAimX by mutableFloatStateOf(0.5f)
+        private set
+    var skillAimY by mutableFloatStateOf(0.5f)
+        private set
+
     // Cursor position for the Titan trackpad, as a 0..1 fraction of the virtual
     // display size. Stays negative until the trackpad is first used. The host UI
     // draws its own pointer sprite at this position: Android only renders the
@@ -1287,6 +1296,13 @@ class DeckController(private val app: Application) {
             .coerceIn(0f, displayW.toFloat())
         val y = (mapping.y * displayH + dragY.coerceIn(-1.5f, 1.5f) * reachY)
             .coerceIn(0f, displayH.toFloat())
+        if (pressed && displayW > 0 && displayH > 0) {
+            skillAimX = (x / displayW).coerceIn(0f, 1f)
+            skillAimY = (y / displayH).coerceIn(0f, 1f)
+            skillAimActive = true
+        } else {
+            skillAimActive = false
+        }
         setMappedTouch("mapped:${mapping.id}", x, y, pressed)
     }
 
