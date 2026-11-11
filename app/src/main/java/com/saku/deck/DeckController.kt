@@ -107,6 +107,13 @@ class DeckController(private val app: Application) {
         private set
     var landscapeDpi by mutableIntStateOf(loadLandscapeDpi())
         private set
+    // Physical bezel/frame sizing for Landscape. This changes the host UI
+    // geometry only; it does not increase the virtual display render resolution.
+    var landscapeFrameWidth by mutableFloatStateOf(loadLandscapeFrameWidth())
+        private set
+    var landscapeFrameHeight by mutableFloatStateOf(loadLandscapeFrameHeight())
+        private set
+    var landscapeFrameDialogOpen by mutableStateOf(false)
 
     /**
      * Measure the foreground app's real SurfaceFlinger presentation cadence.
@@ -271,6 +278,24 @@ class DeckController(private val app: Application) {
         message = "Resolusi Landscape kembali mengikuti ukuran layar otomatis."
         ensureDisplay()
     }
+
+    fun setLandscapeFrameSize(width: Float, height: Float) {
+        landscapeFrameWidth = width.coerceIn(1f, 1.15f)
+        landscapeFrameHeight = height.coerceIn(0.75f, 1f)
+        app.getSharedPreferences(LANDSCAPE_FRAME_PREFS, Context.MODE_PRIVATE).edit()
+            .putFloat("width", landscapeFrameWidth)
+            .putFloat("height", landscapeFrameHeight)
+            .apply()
+    }
+
+    private fun loadLandscapeFrameWidth(): Float =
+        app.getSharedPreferences(LANDSCAPE_FRAME_PREFS, Context.MODE_PRIVATE)
+            .getFloat("width", 1f).coerceIn(1f, 1.15f)
+
+    private fun loadLandscapeFrameHeight(): Float =
+        app.getSharedPreferences(LANDSCAPE_FRAME_PREFS, Context.MODE_PRIVATE)
+            .getFloat("height", 1f).coerceIn(0.75f, 1f)
+
 
     private fun loadPerformanceMode(): Boolean =
         app.getSharedPreferences(PERFORMANCE_PREFS, Context.MODE_PRIVATE)
@@ -1536,6 +1561,7 @@ class DeckController(private val app: Application) {
         private const val TRACKPAD_TOUCH_KEY = "trackpad_cursor"
         private const val PERFORMANCE_PREFS = "saku_deck_performance"
         private const val LANDSCAPE_RESOLUTION_PREFS = "saku_deck_landscape_resolution"
+        private const val LANDSCAPE_FRAME_PREFS = "saku_deck_landscape_frame"
         private const val PERFORMANCE_RENDER_SCALE = 0.8f
         private const val TRACKPAD_MIN_GAIN = 0.55f
         private const val TRACKPAD_MAX_GAIN = 1.6f
