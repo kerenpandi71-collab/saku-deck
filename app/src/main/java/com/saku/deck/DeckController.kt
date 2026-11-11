@@ -114,29 +114,21 @@ class DeckController(private val app: Application) {
             try {
                 val measured = runCatching {
                     if (fpsCapturePackage != pkg) {
-                        // Start a new cumulative TimeStats window only when the
-                        // foreground virtual-display app changes. Clearing it on
-                        // every one-second poll caused intermittent empty samples.
-                        val enabled = svc.runShell(
-                            "dumpsys SurfaceFlinger --timestats -clear -enable"
-                        )
-                        if (enabled.contains("Error:", ignoreCase = true)) {
-                            fpsCapturePackage = null
-                            return@runCatching null
-                        }
+                        // Keep TimeStats as a fallback, but do not depend on its
+                        // packageName metadata: many Android builds omit it for
+                        // app layers on virtual displays.
+                        svc.runShell("dumpsys SurfaceFlinger --timestats -clear -enable")
                         fpsCapturePackage = pkg
-                        return@runCatching null
                     }
-
-                    val dump = svc.runShell("dumpsys SurfaceFlinger --timestats -dump")
-                    parseSurfaceFlingerAverageFps(dump, pkg)
+                    captureSurfaceFlingerLayerFps(svc, pkg)
+                        ?: parseSurfaceFlingerAverageFps(
+                            svc.runShell("dumpsys SurfaceFlinger --timestats -dump"), pkg
+                        )
                 }.getOrNull()
 
                 main.post {
                     // Ignore late results from an app switch or a disconnected service.
                     if (service !== svc || currentApp?.packageName != pkg) return@post
-                    // Keep the last good reading when SurfaceFlinger briefly returns
-                    // an empty/zero layer sample. Reset only when the target app changes.
                     if (measured != null && measured > 0) {
                         virtualFps = measured.coerceIn(0, 240)
                     }
@@ -147,28 +139,77 @@ class DeckController(private val app: Application) {
         }
     }
 
+    /**
+     * Read the actual-present timestamps of the app's SurfaceFlinger layers.
+     * This is important for Saku Deck: the game is composed on a virtual
+     * display, so measuring the host Activity's Choreographer would report
+     * the console UI cadence instead of the game cadence.
+     */
+    private fun captureSurfaceFlingerLayerFps(svc: IDeckService, packageName: String): Int? {
+        val listing = svc.runShell("dumpsys SurfaceFlinger --list")
+        if (listing.isBlank() || listing.contains("Error:", ignoreCase = true)) return null
+
+        val layers = listing.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it.contains(packageName, ignoreCase = true) }
+            .distinct()
+            .take(8)
+            .toList()
+        if (layers.isEmpty()) return null
+
+        val samples = layers.mapNotNull { layer ->
+            // Layer names are returned by SurfaceFlinger itself. Quote the value
+            // as one shell argument so spaces/brackets in names are preserved.
+            val safeLayer = layer.replace("'", "'\\''")
+            val latency = svc.runShell("dumpsys SurfaceFlinger --latency '$safeLayer'")
+            parseSurfaceFlingerLatencyFps(latency)
+        }
+        return samples.maxOrNull()
+    }
+
+    private fun parseSurfaceFlingerLatencyFps(output: String): Int? {
+        if (output.isBlank() || output.contains("Error:", ignoreCase = true)) return null
+        val presentTimes = output.lineSequence()
+            .drop(1) // First line is the display refresh period, not a frame timestamp.
+            .mapNotNull { line ->
+                val columns = line.trim().split(Regex("\\s+"))
+                if (columns.size < 3) null else columns[1].toLongOrNull()
+            }
+            .filter { it > 0L && it < Long.MAX_VALUE }
+            .distinct()
+            .sorted()
+            .toList()
+
+        if (presentTimes.size < 2) return null
+        // Use the newest 60 presented frames to keep the overlay responsive
+        // while smoothing single-frame scheduling jitter.
+        val window = presentTimes.takeLast(60)
+        val elapsedNs = window.last() - window.first()
+        if (elapsedNs <= 0L) return null
+        val fps = (window.size - 1) * 1_000_000_000.0 / elapsedNs.toDouble()
+        return fps.takeIf { it.isFinite() && it > 0.0 }?.let { kotlin.math.round(it).toInt() }
+    }
+
     private fun parseSurfaceFlingerAverageFps(dump: String, packageName: String): Int? {
         if (dump.isBlank() || dump.contains("Error:", ignoreCase = true)) return null
 
-        // SurfaceFlinger reports separate TimeStats blocks for each rendered layer.
-        // Aggregate all layers belonging to the package so apps using multiple
-        // SurfaceView/Compose layers on the virtual display remain detectable.
+        // Fallback for ROMs where --latency is unavailable. Some builds expose
+        // packageName as a separate field; others only include it in layerName.
         val blocks = dump.split(Regex("(?m)(?=^\\s*layerName\\s*=)"))
         val packagePattern = Regex(
             "(?m)^\\s*packageName\\s*=\\s*${Regex.escape(packageName)}\\s*$"
         )
         val fpsValues = blocks.asSequence()
-            .filter { packagePattern.containsMatchIn(it) ||
-                (it.contains(packageName) && it.contains("layerName", ignoreCase = true)) }
+            .filter {
+                packagePattern.containsMatchIn(it) ||
+                    it.contains(packageName, ignoreCase = true) && it.contains("layerName", ignoreCase = true)
+            }
             .mapNotNull { block ->
                 Regex("(?m)^\\s*averageFPS\\s*=\\s*([0-9]+(?:\\.[0-9]+)?)")
                     .find(block)?.groupValues?.getOrNull(1)?.toFloatOrNull()
             }
             .filter { it.isFinite() && it > 0f }
             .toList()
-
-        // The highest active layer FPS is more useful than averaging unrelated
-        // UI/video layers with the app's main interactive surface.
         return fpsValues.maxOrNull()?.let { kotlin.math.round(it).toInt() }
     }
 
