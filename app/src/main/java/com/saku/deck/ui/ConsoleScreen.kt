@@ -114,8 +114,11 @@ fun ConsoleScreen(c: DeckController) {
     ) {
         val side = (maxWidth * 0.22f).coerceIn(150.dp, 260.dp)
         val scale = minOf(maxHeight.value / 360f, side.value / 180f).coerceIn(0.7f, 1.8f)
+        // Follow the physical host orientation. The Android sensor decides
+        // portrait vs landscape; the old saved mode must not override rotation.
+        val portraitLayout = maxHeight > maxWidth
 
-        if (c.titanPortraitMode) {
+        if (portraitLayout) {
             TitanPortraitShell(c, Modifier.fillMaxSize())
         } else if (!c.gamepadHidden) {
             Row(
@@ -139,6 +142,16 @@ fun ConsoleScreen(c: DeckController) {
             (constraints.maxHeight.toFloat() - bubbleSizePx - with(density) { 18.dp.toPx() }).coerceAtLeast(0f),
         )
         var assistantOffset by remember { mutableStateOf(initialBubble) }
+        // Re-clamp the floating control whenever the host bounds change,
+        // otherwise a portrait coordinate can leave it off-screen in landscape.
+        LaunchedEffect(constraints.maxWidth, constraints.maxHeight) {
+            val maxX = (rootWidthPx - bubbleSizePx).coerceAtLeast(0f)
+            val maxY = (rootHeightPx - bubbleSizePx).coerceAtLeast(0f)
+            assistantOffset = Offset(
+                assistantOffset.x.coerceIn(0f, maxX),
+                assistantOffset.y.coerceIn(0f, maxY),
+            )
+        }
         Column(
             Modifier.offset { IntOffset(assistantOffset.x.roundToInt(), assistantOffset.y.roundToInt()) },
             horizontalAlignment = Alignment.End,
@@ -146,7 +159,7 @@ fun ConsoleScreen(c: DeckController) {
         ) {
             if (c.assistantMenuOpen) {
                 listOf(
-                    (if (c.titanPortraitMode) "MODE LANDSCAPE" else "MODE PORTRAIT TITAN") to { c.toggleTitanPortraitMode() },
+                    "ROTASI OTOMATIS ANDROID" to { c.assistantMenuOpen = false },
                     (if (c.performanceMode) "MODE KUALITAS PENUH" else "MODE PERFORMA") to { c.togglePerformanceMode() },
                     (if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() },
                     (if (c.externalKeyboardOpen) "TUTUP KEYBOARD LUAR" else "KEYBOARD LUAR") to {
@@ -264,59 +277,83 @@ private fun ErrorLogDialog(c: DeckController) {
 
 @Composable
 private fun RecentTasksDialog(c: DeckController) {
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF090D14))) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val landscape = maxWidth > maxHeight
-        Column(Modifier.fillMaxSize().padding(horizontal = if (landscape) 30.dp else 18.dp, vertical = 18.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                Column {
-                    Text("APLIKASI TERAKHIR", color = Color.White, fontSize = 21.sp,
+        val panelShape = RoundedCornerShape(14.dp)
+        Column(
+            Modifier
+                .fillMaxWidth(if (landscape) 0.56f else 0.92f)
+                .fillMaxHeight(if (landscape) 0.92f else 0.48f)
+                .clip(panelShape)
+                .background(Color(0xF0101318))
+                .border(1.5.dp, Color(0xFF66BDF0), panelShape)
+                .padding(8.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().height(42.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("RECENT", color = Color(0xFF66BDF0), fontSize = 13.sp,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    Text("Riwayat virtual display • ${c.recentTasks.size} aplikasi", color = Color(0xFF9EADBF), fontSize = 11.sp)
+                    Text("Ketuk aplikasi untuk fokus • X untuk menutup",
+                        color = Color(0xFF9EADBF), fontSize = 9.sp)
                 }
-                Text("TUTUP", Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF202B3A))
-                    .clickable { c.closeRecentTasks() }.padding(horizontal = 18.dp, vertical = 10.dp),
-                    color = Color.White, fontSize = 11.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                Box(
+                    Modifier.size(28.dp).clip(CircleShape)
+                        .background(Color(0xFF262A31))
+                        .clickable { c.closeRecentTasks() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("X", color = Color.White, fontSize = 11.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                }
             }
             if (c.recentTasks.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("▣", color = Color(0xFF60758F), fontSize = 42.sp)
-                        Text("Belum ada aplikasi terbaru", color = Color.White, fontSize = 16.sp)
-                        Text("Aplikasi yang dibuka di virtual display akan muncul di sini.", color = Color(0xFF9EADBF), fontSize = 11.sp)
-                    }
-                }
-            } else if (landscape) {
-                LazyRow(Modifier.fillMaxWidth().weight(1f),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 4.dp, end = 4.dp, top = 22.dp, bottom = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    items(c.recentTasks, key = { "${it.taskId}:${it.component}" }) { entry -> RecentTaskTvCard(c, entry, true) }
+                    Text("Tidak ada aplikasi terbuka", color = Color(0xFF9EADBF), fontSize = 12.sp)
                 }
             } else {
-                LazyColumn(Modifier.fillMaxWidth().weight(1f),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 18.dp, bottom = 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(c.recentTasks, key = { "${it.taskId}:${it.component}" }) { entry -> RecentTaskTvCard(c, entry, false) }
+                LazyColumn(
+                    Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 4.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                ) {
+                    items(c.recentTasks, key = { "${it.taskId}:${it.component}" }) { entry ->
+                        val app = AppEntry(entry.label, entry.component.substringBefore('/'), entry.component)
+                        Row(
+                            Modifier.fillMaxWidth().height(46.dp)
+                                .background(Color.White.copy(alpha = 0.035f))
+                                .clickable { c.focusRecentTask(entry) }
+                                .padding(horizontal = 9.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                                AppIcon(app)
+                            }
+                            Text(
+                                entry.label,
+                                Modifier.weight(1f),
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            Box(
+                                Modifier.size(24.dp).clip(CircleShape)
+                                    .background(Color(0xFF3A3E44))
+                                    .clickable { c.closeRecentTask(entry) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("X", color = Color.White, fontSize = 10.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun RecentTaskTvCard(c: DeckController, entry: RecentTaskEntry, landscape: Boolean) {
-    val app = AppEntry(entry.label, entry.component.substringBefore('/'), entry.component)
-    Row(Modifier.then(if (landscape) Modifier.width(190.dp).height(174.dp) else Modifier.fillMaxWidth().height(88.dp))
-        .clip(RoundedCornerShape(18.dp)).background(Color(0xFF172231)).clickable { c.focusRecentTask(entry) }
-        .padding(if (landscape) 14.dp else 12.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        AppIcon(app)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(entry.label, color = Color.White, fontSize = 14.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 2)
-            Text(entry.component.substringBefore('/'), color = Color(0xFF9EADBF), fontSize = 9.sp, maxLines = 1)
-            Text("BUKA", color = Color(0xFF9CCBFF), fontSize = 9.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-            Text(if (entry.taskId > 0) "TUTUP APLIKASI" else "HAPUS DARI RIWAYAT", Modifier.clickable { c.closeRecentTask(entry) }, color = Color(0xFFFFB4A9), fontSize = 8.sp)
         }
     }
 }
