@@ -78,6 +78,7 @@ fun ConsoleScreen(c: DeckController) {
     val hostActivity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
     LaunchedEffect(c) {
         while (true) {
+            c.refreshVirtualFps()
             delay(1000)
         }
     }
@@ -310,7 +311,6 @@ private fun TitanStatusStrip(c: DeckController) {
             val level = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
             val scale = intent?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100) ?: 100
             battery = if (level >= 0 && scale > 0) level * 100 / scale else null
-            c.refreshVirtualFps()
             delay(1000)
         }
     }
