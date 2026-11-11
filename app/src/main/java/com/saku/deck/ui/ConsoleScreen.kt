@@ -10,6 +10,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -185,49 +188,61 @@ fun ConsoleScreen(c: DeckController) {
 
 @Composable
 private fun RecentTasksDialog(c: DeckController) {
-    AlertDialog(
-        onDismissRequest = { c.closeRecentTasks() },
-        title = { Text("Recent Apps • Virtual Display") },
-        text = {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF090D14))) {
+        val landscape = maxWidth > maxHeight
+        Column(Modifier.fillMaxSize().padding(horizontal = if (landscape) 30.dp else 18.dp, vertical = 18.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text("APLIKASI TERAKHIR", color = Color.White, fontSize = 21.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text("Virtual display • ${c.recentTasks.size} aplikasi aktif", color = Color(0xFF9EADBF), fontSize = 11.sp)
+                }
+                Text("TUTUP", Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF202B3A))
+                    .clickable { c.closeRecentTasks() }.padding(horizontal = 18.dp, vertical = 10.dp),
+                    color = Color.White, fontSize = 11.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            }
             if (c.recentTasks.isEmpty()) {
-                Text("Belum ada aplikasi terbuka pada virtual display.")
-            } else {
-                Column(
-                    Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    c.recentTasks.forEach { entry ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            AppIcon(AppEntry(entry.label, entry.component.substringBefore('/'), entry.component))
-                            Column(
-                                Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
-                                    .clickable { c.focusRecentTask(entry) }
-                                    .padding(horizontal = 8.dp, vertical = 7.dp),
-                            ) {
-                                Text(entry.label, color = Color.White, fontSize = 13.sp)
-                                Text(
-                                    entry.component,
-                                    color = Color(0xFF929AA5),
-                                    fontSize = 8.sp,
-                                    maxLines = 1,
-                                )
-                            }
-                            TextButton(onClick = { c.closeRecentTask(entry) }) {
-                                Text("Tutup")
-                            }
-                        }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("▣", color = Color(0xFF60758F), fontSize = 42.sp)
+                        Text("Belum ada aplikasi terbaru", color = Color.White, fontSize = 16.sp)
+                        Text("Aplikasi yang dibuka di virtual display akan muncul di sini.", color = Color(0xFF9EADBF), fontSize = 11.sp)
                     }
                 }
+            } else if (landscape) {
+                LazyRow(Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 4.dp, end = 4.dp, top = 22.dp, bottom = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    items(c.recentTasks, key = { it.taskId }) { entry -> RecentTaskTvCard(c, entry, true) }
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 18.dp, bottom = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(c.recentTasks, key = { it.taskId }) { entry -> RecentTaskTvCard(c, entry, false) }
+                }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { c.closeRecentTasks() }) { Text("Selesai") }
-        },
-    )
+        }
+    }
+}
+
+@Composable
+private fun RecentTaskTvCard(c: DeckController, entry: DeckController.RecentTaskEntry, landscape: Boolean) {
+    val app = AppEntry(entry.label, entry.component.substringBefore('/'), entry.component)
+    Row(Modifier.then(if (landscape) Modifier.width(190.dp).height(174.dp) else Modifier.fillMaxWidth().height(88.dp))
+        .clip(RoundedCornerShape(18.dp)).background(Color(0xFF172231)).clickable { c.focusRecentTask(entry) }
+        .padding(if (landscape) 14.dp else 12.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        AppIcon(app)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(entry.label, color = Color.White, fontSize = 14.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 2)
+            Text(entry.component.substringBefore('/'), color = Color(0xFF9EADBF), fontSize = 9.sp, maxLines = 1)
+            Text("BUKA", color = Color(0xFF9CCBFF), fontSize = 9.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            Text("TUTUP APLIKASI", Modifier.clickable { c.closeRecentTask(entry) }, color = Color(0xFFFFB4A9), fontSize = 8.sp)
+        }
+    }
 }
 
 @Composable
