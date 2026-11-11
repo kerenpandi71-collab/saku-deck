@@ -26,15 +26,6 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // While the host IME is open, back must dismiss the keyboard,
-                // not leak a BACK key press into the app on the virtual display.
-                val decor = window.decorView
-                val imeVisible = WindowInsetsCompat.toWindowInsetsCompat(decor.rootWindowInsets)
-                    .isVisible(WindowInsetsCompat.Type.ime())
-                if (imeVisible) {
-                    WindowInsetsControllerCompat(window, decor).hide(WindowInsetsCompat.Type.ime())
-                    return
-                }
                 // Keep the deck (and the app inside it) alive instead of closing it.
                 if (!controller.handleBack()) moveTaskToBack(true)
             }

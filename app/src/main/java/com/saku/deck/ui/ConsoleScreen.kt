@@ -3,13 +3,9 @@ package com.saku.deck.ui
 import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import android.view.ViewConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -51,22 +47,14 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.composed
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import com.saku.deck.DeckController
 import com.saku.deck.ShizukuState
 
@@ -111,7 +99,6 @@ fun ConsoleScreen(c: DeckController) {
                     "VISIBILITAS" to { c.visibilityMenuOpen = true },
                     "UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true },
                     "ATUR POSISI" to { c.beginControlLayoutEdit() },
-                    "LOG ERROR" to { c.logDialogOpen = true },
                 ).forEach { (label, action) ->
                     Text(label, Modifier.clip(RoundedCornerShape(50))
                         .background(Color.Black.copy(alpha = 0.88f))
@@ -151,59 +138,6 @@ fun ConsoleScreen(c: DeckController) {
         if (c.controlSizeMenuOpen) ControlSizeDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
         if (c.mappingMenuOpen) MappingDialog(c)
-        if (c.logDialogOpen) ErrorLogDialog(c)
-    }
-}
-
-@Composable
-private fun ErrorLogDialog(c: DeckController) {
-    val ctx = LocalContext.current
-    AlertDialog(
-        onDismissRequest = { c.logDialogOpen = false },
-        title = { Text("Log error") },
-        text = {
-            Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
-                Text(c.errorLog(), color = Deck.Ink, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                runCatching {
-                    val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Saku Deck log", c.errorLog()))
-                }
-                c.message = "Log error tersalin."
-            }) { Text("SALIN") }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = { c.clearErrorLog() }) { Text("HAPUS") }
-                TextButton(onClick = { c.logDialogOpen = false }) { Text("TUTUP") }
-            }
-        },
-    )
-}
-
-/** Tap that only fires when the finger barely moves, so fast typing never
- *  drifts into the navigation strip sitting right above the keyboard. */
-private fun Modifier.steadyTap(onTap: () -> Unit): Modifier = composed {
-    val slop = ViewConfiguration.get(LocalContext.current).scaledTouchSlop * 3f
-    pointerInput(Unit) {
-        awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false)
-            var travelled = 0f
-            var lifted = false
-            while (true) {
-                val event = awaitPointerEvent()
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                travelled += change.positionChange().getDistance()
-                if (!change.pressed) {
-                    lifted = true
-                    break
-                }
-            }
-            if (lifted && travelled <= slop) onTap()
-        }
     }
 }
 
@@ -248,8 +182,7 @@ private fun TitanNavigationRow(c: DeckController) {
         "ALT" to KeyEvent.KEYCODE_ALT_LEFT,
     )
     Row(
-        Modifier.fillMaxWidth().padding(top = 4.dp).heightIn(min = 32.dp)
-            .systemGestureExclusion(),
+        Modifier.fillMaxWidth().heightIn(min = 32.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         keys.forEach { (label, code) ->
@@ -257,13 +190,7 @@ private fun TitanNavigationRow(c: DeckController) {
                 Modifier.weight(1f).height(32.dp)
                     .clip(RoundedCornerShape(3.dp))
                     .background(Color(0xFF34383D))
-                    .steadyTap {
-                        if (code == KeyEvent.KEYCODE_APP_SWITCH) c.toggleRecents()
-                        else {
-                            c.sendKey(code, true)
-                            c.sendKey(code, false)
-                        }
-                    },
+                    .clickable { c.sendKey(code, true); c.sendKey(code, false) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(label, color = Color(0xFFE1E3E6), fontSize = if (label == "ALT") 8.sp else 13.sp)
@@ -282,7 +209,6 @@ private fun TitanKeyboard(c: DeckController) {
     var shifted by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(5.dp))
-            .systemGestureExclusion()
             .background(Color(0xFF24272B)).padding(3.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
@@ -297,13 +223,10 @@ private fun TitanKeyboard(c: DeckController) {
                         Modifier.weight(if (wide) 1.35f else 1f).height(34.dp)
                             .clip(RoundedCornerShape(4.dp))
                             .background(Color(0xFF454A50))
-                            .steadyTap {
+                            .clickable {
                                 when (key) {
                                     "⇧" -> shifted = !shifted
-                                    "⌫" -> {
-                                        c.sendKey(KeyEvent.KEYCODE_DEL, true)
-                                        c.sendKey(KeyEvent.KEYCODE_DEL, false)
-                                    }
+                                    "⌫" -> c.sendKey(KeyEvent.KEYCODE_DEL, true).also { c.sendKey(KeyEvent.KEYCODE_DEL, false) }
                                     else -> c.sendText(if (shifted) key else key.lowercase()).also { shifted = false }
                                 }
                             },
@@ -334,7 +257,7 @@ private fun TitanKeyboard(c: DeckController) {
 private fun TitanUtilityKey(label: String, modifier: Modifier, onClick: () -> Unit) {
     Box(
         modifier.height(31.dp).clip(RoundedCornerShape(4.dp))
-            .background(Color(0xFF454A50)).steadyTap(onClick),
+            .background(Color(0xFF454A50)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = Color(0xFFE7E9EB), fontSize = 9.sp)
@@ -484,7 +407,6 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
                 }
                 if ("back" !in c.hiddenControls) PillButton("KEMBALI", scale) { c.sendKey(KeyEvent.KEYCODE_BACK, it) }
                 Column(verticalArrangement = Arrangement.spacedBy((5 * scale).dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    PillButton("RECENT", scale) { if (it) c.toggleRecents() }
                     if ("home" !in c.hiddenControls) PillButton("HOME", scale) { c.sendKey(KeyEvent.KEYCODE_HOME, it) }
                     if ("menu" !in c.hiddenControls) PillButton("MENU", scale, accent = true) { if (it) c.openPicker() }
                 }
@@ -514,7 +436,6 @@ private fun ScreenArea(c: DeckController, modifier: Modifier) {
             when {
                 c.shizukuState != ShizukuState.READY -> ShizukuPanel(c)
                 c.displayId < 0 -> LoadingPanel(c)
-                c.recentsOpen -> RecentsPanel(c)
                 c.pickerOpen -> AppPicker(c)
             }
             c.message?.let { text ->
