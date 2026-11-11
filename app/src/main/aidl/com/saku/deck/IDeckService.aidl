@@ -28,4 +28,9 @@ interface IDeckService {
     int getUid() = 8;
 
     String getInputStatus() = 9;
+
+    // Task overview is scoped to the virtual display, never the physical display.
+    String getOpenTasks(int displayId) = 10;
+    String focusOpenTask(int displayId, int taskId) = 11;
+    String closeOpenTask(int displayId, int taskId) = 12;
 }
