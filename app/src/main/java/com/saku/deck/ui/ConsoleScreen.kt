@@ -75,6 +75,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.saku.deck.AppEntry
 import com.saku.deck.DeckController
+import com.saku.deck.RecentTaskEntry
 import com.saku.deck.ShizukuState
 
 @Composable
@@ -228,7 +229,7 @@ private fun RecentTasksDialog(c: DeckController) {
 }
 
 @Composable
-private fun RecentTaskTvCard(c: DeckController, entry: DeckController.RecentTaskEntry, landscape: Boolean) {
+private fun RecentTaskTvCard(c: DeckController, entry: RecentTaskEntry, landscape: Boolean) {
     val app = AppEntry(entry.label, entry.component.substringBefore('/'), entry.component)
     Row(Modifier.then(if (landscape) Modifier.width(190.dp).height(174.dp) else Modifier.fillMaxWidth().height(88.dp))
         .clip(RoundedCornerShape(18.dp)).background(Color(0xFF172231)).clickable { c.focusRecentTask(entry) }
