@@ -120,7 +120,7 @@ class DeckUserService : IDeckService.Stub() {
         val statusBar = asInterface(STATUS_BAR_SERVICE, systemService("statusbar"))
         val token = navigationToken ?: Binder().also { navigationToken = it }
         val flags = if (enabled) DISABLE_HOME or DISABLE_RECENT else 0
-        val userId = Process.myUid() / 100000
+        val userId = android.os.Process.myUid() / 100000
         try {
             // Shizuku UserService executes as shell (uid 2000), not as the app.
             // SystemUI validates the package attribution against the caller UID.
@@ -315,7 +315,7 @@ class DeckUserService : IDeckService.Stub() {
 
     override fun runShell(command: String): String = exec(listOf("/system/bin/sh", "-c", command))
 
-    override fun getUid(): Int = Process.myUid()
+    override fun getUid(): Int = android.os.Process.myUid()
 
     override fun destroy() {
         releaseDisplay()
@@ -323,7 +323,7 @@ class DeckUserService : IDeckService.Stub() {
     }
 
     private fun exec(cmd: List<String>): String {
-        var process: Process? = null
+        var process: java.lang.Process? = null
         return try {
             val p = ProcessBuilder(cmd).redirectErrorStream(true).start()
             process = p
