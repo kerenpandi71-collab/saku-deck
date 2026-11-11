@@ -76,7 +76,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -89,6 +88,7 @@ import com.saku.deck.AppEntry
 import com.saku.deck.DeckController
 import com.saku.deck.RecentTaskEntry
 import com.saku.deck.ShizukuState
+import kotlin.math.roundToInt
 
 @Composable
 fun ConsoleScreen(c: DeckController) {
@@ -135,7 +135,7 @@ fun ConsoleScreen(c: DeckController) {
             (constraints.maxWidth.toFloat() - bubbleSizePx - with(density) { 14.dp.toPx() }).coerceAtLeast(0f),
             (constraints.maxHeight.toFloat() - bubbleSizePx - with(density) { 18.dp.toPx() }).coerceAtLeast(0f),
         )
-        var assistantOffset by remember(c.titanPortraitMode) { mutableStateOf(initialBubble) }
+        var assistantOffset by remember { mutableStateOf(initialBubble) }
         Column(
             Modifier.offset { IntOffset(assistantOffset.x.roundToInt(), assistantOffset.y.roundToInt()) },
             horizontalAlignment = Alignment.End,
