@@ -481,7 +481,8 @@ class DeckController(private val app: Application) {
 
     private fun labelFor(component: String): String = runCatching {
         val pm = app.packageManager
-        pm.getActivityInfo(ComponentName.unflattenFromString(component), 0).loadLabel(pm).toString()
+        val cn = ComponentName.unflattenFromString(component)!!
+        pm.getActivityInfo(cn, PackageManager.ComponentInfoFlags.of(0)).loadLabel(pm).toString()
     }.getOrNull()?.takeIf { it.isNotBlank() } ?: component.substringBefore("/")
 
     // ---- Mobile Legends touch mapping --------------------------------------
