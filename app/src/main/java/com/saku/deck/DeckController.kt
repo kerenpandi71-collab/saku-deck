@@ -340,23 +340,12 @@ class DeckController(private val app: Application) {
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             if (binder == null || !binder.pingBinder()) {
-                service = null
-                main.post {
-                    binding = false
-                    shizukuState = ShizukuState.NOT_RUNNING
-                    message = "Binder Shizuku tidak valid; mencoba menyambungkan ulang."
-                    scheduleShizukuReconnect()
-                }
+                handleShizukuServiceLost("Binder Shizuku tidak valid; mencoba menyambungkan ulang.")
                 return
             }
             val connected = runCatching { IDeckService.Stub.asInterface(binder) }.getOrNull()
             if (connected == null || !runCatching { connected.asBinder().isBinderAlive }.getOrDefault(false)) {
-                service = null
-                main.post {
-                    binding = false
-                    shizukuState = ShizukuState.NOT_RUNNING
-                    scheduleShizukuReconnect()
-                }
+                handleShizukuServiceLost("Binder layanan Saku Deck tidak aktif; mencoba menyambungkan ulang.")
                 return
             }
             service = connected
@@ -418,7 +407,11 @@ class DeckController(private val app: Application) {
                 binding = false
                 virtualFps = 0
                 displayId = -1
+                displayW = 0
+                displayH = 0
+                displayDpi = 0
                 currentApp = null
+                virtualFps = 0
                 pickerOpen = true
                 refresh()
             }
@@ -441,9 +434,19 @@ class DeckController(private val app: Application) {
             shizukuState = ShizukuState.READY
             return
         }
-        // A stale AIDL proxy must not keep the UI in READY after Shizuku died.
-        service = null
-        binding = false
+        // A stale AIDL proxy must not keep the UI in READY or reuse an ID
+        // that belonged to the dead helper process.
+        if (connectedService != null) {
+            service = null
+            binding = false
+            displayId = -1
+            displayW = 0
+            displayH = 0
+            displayDpi = 0
+            currentApp = null
+            virtualFps = 0
+            pickerOpen = true
+        }
         shizukuState = try {
             when {
                 !Shizuku.pingBinder() ->
@@ -550,7 +553,12 @@ class DeckController(private val app: Application) {
             val result = runCatching {
                 if (existing >= 0) {
                     svc.setSurface(Bundle().apply { putParcelable("surface", s) })
-                    if (w != displayW || h != displayH || dpi != displayDpi) svc.resizeDisplay(w, h, dpi)
+                    if (w != displayW || h != displayH || dpi != displayDpi) {
+                        val resized = svc.resizeDisplay(w, h, dpi)
+                        if (resized.getInt("displayId", -1) < 0) {
+                            throw IllegalStateException(resized.getString("error") ?: "Virtual display gagal diubah ukurannya")
+                        }
+                    }
                     Bundle().apply { putInt("displayId", existing) }
                 } else {
                     svc.createDisplay(Bundle().apply {
