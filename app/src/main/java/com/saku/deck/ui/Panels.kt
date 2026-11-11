@@ -21,6 +21,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -175,68 +181,60 @@ private fun loadApps(ctx: Context): List<AppEntry> {
 @Composable
 fun AppPicker(c: DeckController) {
     val ctx = LocalContext.current
-    val apps by produceState<List<AppEntry>?>(null) {
-        value = withContext(Dispatchers.IO) { loadApps(ctx) }
-    }
-
-    Column(Modifier.fillMaxSize().sakuWallpaper()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(Color.White.copy(alpha = 0.55f))
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Pilih aplikasi", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Deck.Ink)
-            Spacer(Modifier.weight(1f))
-            c.currentApp?.let { current ->
-                Text(
-                    "Lanjutkan ${current.label} ›",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Deck.Accent,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .clickable { c.closePicker() }
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                )
-            }
-        }
-
-        val list = apps
-        if (list == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Deck.Accent, modifier = Modifier.size(28.dp))
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(78.dp),
-                contentPadding = PaddingValues(10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(list, key = { it.component }) { entry ->
-                    Column(
-                        Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { c.launch(entry) }
-                            .padding(6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        AppIcon(entry)
-                        Text(
-                            entry.label,
-                            fontSize = 11.sp,
-                            color = Deck.Ink,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                    }
+    val apps by produceState<List<AppEntry>?>(null) { value = withContext(Dispatchers.IO) { loadApps(ctx) } }
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF090D14))) {
+        val landscape = maxWidth > maxHeight
+        Column(Modifier.fillMaxSize().padding(horizontal = if (landscape) 30.dp else 18.dp, vertical = 18.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text("SAKU DECK", color = Color(0xFF8DBFFF), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    Text("Pilih aplikasi", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    Text("Semua aplikasi • Virtual display", color = Color(0xFF9EADBF), fontSize = 11.sp)
+                }
+                c.currentApp?.let { current ->
+                    Text("LANJUTKAN  ${current.label}  ›", Modifier.clip(RoundedCornerShape(50))
+                        .background(Color(0xFF20364F)).clickable { c.closePicker() }
+                        .padding(horizontal = 16.dp, vertical = 11.dp), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
+            val list = apps
+            if (list == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF8DBFFF), modifier = Modifier.size(30.dp))
+                }
+            } else if (list.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Tidak ada aplikasi yang bisa dibuka.", color = Color.White)
+                }
+            } else if (landscape) {
+                LazyRow(Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = PaddingValues(start = 4.dp, end = 4.dp, top = 22.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    items(list, key = { it.component }) { entry -> TvAppCard(entry, true) { c.launch(entry) } }
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = PaddingValues(top = 18.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(list, key = { it.component }) { entry -> TvAppCard(entry, false) { c.launch(entry) } }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TvAppCard(entry: AppEntry, landscape: Boolean, onClick: () -> Unit) {
+    Row(Modifier.then(if (landscape) Modifier.width(150.dp).height(154.dp) else Modifier.fillMaxWidth().height(82.dp))
+        .clip(RoundedCornerShape(18.dp)).background(Color(0xFF172231)).clickable(onClick = onClick)
+        .padding(if (landscape) 14.dp else 12.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        AppIcon(entry)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(entry.label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("BUKA APLIKASI", color = Color(0xFF9CCBFF), fontSize = 8.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
