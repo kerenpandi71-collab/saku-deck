@@ -661,14 +661,16 @@ class DeckController(private val app: Application) {
             val result = runCatching { svc.closeOpenTask(targetDisplay, entry.taskId) }
                 .getOrElse { "Gagal menutup aplikasi: ${it.message}" }
             val refreshed = runCatching { svc.getOpenTasks(targetDisplay) }.getOrDefault("")
-            val entries = refreshed.lineSequence().mapNotNull { line ->
+            val active = refreshed.lineSequence().mapNotNull { line ->
                 val parts = line.split(" • ")
                 val taskId = parts.firstOrNull()?.removePrefix("taskId=")?.toIntOrNull()
                     ?: return@mapNotNull null
                 val component = parts.getOrNull(1) ?: return@mapNotNull null
                 RecentTaskEntry(taskId, resolveRecentTaskLabel(component), component)
-            }.distinctBy { it.taskId }
-                .toList()
+            }.distinctBy { it.component }.toList()
+            val saved = loadRecentApps()
+            val entries = (active + saved.filterNot { old -> active.any { it.component == old.component } })
+                .distinctBy { it.component }.take(50)
             main.post {
                 if (displayId != targetDisplay || service !== svc) return@post
                 recentTasks = entries
