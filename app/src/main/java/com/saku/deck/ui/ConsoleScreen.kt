@@ -260,6 +260,7 @@ private fun LandscapeResolutionDialog(c: DeckController) {
     var heightText by remember(c.landscapeHeight) { mutableStateOf(c.landscapeHeight.toString()) }
     var dpiText by remember(c.landscapeDpi) { mutableStateOf(c.landscapeDpi.toString()) }
 
+    @Composable
     fun numericField(value: String, onValueChange: (String) -> Unit, label: String) {
         Column(Modifier.width(112.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label, color = Deck.Ink.copy(alpha = 0.72f), fontSize = 10.sp)
