@@ -242,6 +242,7 @@ class DeckController(private val app: Application) {
     private var hostActive = true
     @Volatile
     private var shuttingDown = false
+    private val shutdownCallbacks = mutableListOf<() -> Unit>()
     private var pendingEnsure = false
     private val worker = Executors.newSingleThreadExecutor()
     // Keep Binder input injection off the Compose/UI thread; preserve event order.
@@ -322,8 +323,9 @@ class DeckController(private val app: Application) {
 
     fun onHostResumed() {
         hostActive = true
-        shuttingDown = false
-        refresh()
+        // Do not cancel an in-flight teardown. Its completion callback will
+        // reopen the Shizuku connection after the old display is fully released.
+        if (!shuttingDown) refresh()
     }
 
     fun refresh() {
@@ -476,7 +478,10 @@ class DeckController(private val app: Application) {
      * are queued behind them on the same input executor so they cannot overtake
      * an outstanding pointer release.
      */
-    fun shutdown() {
+    fun shutdown(completion: (() -> Unit)? = null) {
+        if (completion != null) synchronized(shutdownCallbacks) {
+            shutdownCallbacks.add(completion)
+        }
         if (shuttingDown) return
         hostActive = false
         shuttingDown = true
@@ -527,6 +532,7 @@ class DeckController(private val app: Application) {
                                 } else {
                                     shizukuState = ShizukuState.CONNECTING
                                 }
+                                completeShutdownCallbacks()
                             }
                         }
                     }
@@ -541,6 +547,7 @@ class DeckController(private val app: Application) {
                         Shizuku.unbindUserService(userServiceArgs, connection, true)
                     }
                     service = null
+                    main.post { completeShutdownCallbacks() }
                 }
             }
         }.onFailure {
@@ -555,7 +562,15 @@ class DeckController(private val app: Application) {
                 Shizuku.unbindUserService(userServiceArgs, connection, true)
             }
             service = null
+            main.post { completeShutdownCallbacks() }
         }
+    }
+
+    private fun completeShutdownCallbacks() {
+        val callbacks = synchronized(shutdownCallbacks) {
+            shutdownCallbacks.toList().also { shutdownCallbacks.clear() }
+        }
+        callbacks.forEach { callback -> runCatching { callback() } }
     }
 
     // ---- apps ---------------------------------------------------------------
@@ -1225,10 +1240,9 @@ class DeckController(private val app: Application) {
         // Titan portrait has its own on-screen Back control. Ignore host/system
         // Back dispatch here so a keyboard interaction cannot be interpreted as
         // navigation; the explicit Titan Back button uses sendNavigationBack().
-        if (!pickerOpen && displayId >= 0 && !titanPortraitMode) {
-            sendNavigationBack(true)
-            sendNavigationBack(false)
-        }
+        // Never forward Android's generic Back event into the virtual app.
+        // This prevents key/IME focus changes from becoming accidental app
+        // navigation. Back is available only through the explicit Deck control.
         // Keep the host deck in the foreground. Exiting is an explicit action
         // from the assistant bubble, not an accidental Android Back press.
         return true
