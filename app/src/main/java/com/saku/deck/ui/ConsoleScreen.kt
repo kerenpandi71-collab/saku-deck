@@ -175,10 +175,57 @@ fun ConsoleScreen(c: DeckController) {
             )
         }
         if (c.visibilityMenuOpen) ControlVisibilityDialog(c)
+        if (c.recentsOpen) RecentTasksDialog(c)
         if (c.controlSizeMenuOpen) ControlSizeDialog(c)
         if (c.controlLayoutEditing) ControlLayoutBar(c, Modifier.align(Alignment.TopCenter))
         if (c.mappingMenuOpen) MappingDialog(c)
     }
+}
+
+@Composable
+private fun RecentTasksDialog(c: DeckController) {
+    AlertDialog(
+        onDismissRequest = { c.closeRecentTasks() },
+        title = { Text("Recent Apps • Virtual Display") },
+        text = {
+            if (c.recentTasks.isEmpty()) {
+                Text("Belum ada aplikasi terbuka pada virtual display.")
+            } else {
+                Column(
+                    Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    c.recentTasks.forEach { entry ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Column(
+                                Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                                    .clickable { c.focusRecentTask(entry) }
+                                    .padding(horizontal = 8.dp, vertical = 7.dp),
+                            ) {
+                                Text(entry.label, color = Color.White, fontSize = 13.sp)
+                                Text(
+                                    entry.component,
+                                    color = Color(0xFF929AA5),
+                                    fontSize = 8.sp,
+                                    maxLines = 1,
+                                )
+                            }
+                            TextButton(onClick = { c.closeRecentTask(entry) }) {
+                                Text("Tutup")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { c.closeRecentTasks() }) { Text("Selesai") }
+        },
+    )
 }
 
 @Composable
@@ -649,7 +696,8 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
                 }
                 if ("back" !in c.hiddenControls) PillButton("KEMBALI", scale) { c.sendNavigationBack(it) }
                 Column(verticalArrangement = Arrangement.spacedBy((5 * scale).dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    if ("home" !in c.hiddenControls) PillButton("HOME", scale) { c.sendKey(KeyEvent.KEYCODE_HOME, it) }
+                    if ("home" !in c.hiddenControls) PillButton("HOME", scale) { if (it) c.openPicker() }
+                    PillButton("RECENT", scale, accent = true) { if (it) c.openRecentTasks() }
                     if ("menu" !in c.hiddenControls) PillButton("MENU", scale, accent = true) { if (it) c.openPicker() }
                 }
             }
