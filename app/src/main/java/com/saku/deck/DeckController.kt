@@ -345,9 +345,8 @@ class DeckController(private val app: Application) {
     private var displayH = 0
     private var displayDpi = 0
 
-    // lx, ly, rx, ry, left trigger, right trigger
-    private val axes = FloatArray(6)
     private val keyDownTimes = HashMap<Int, Long>()
+    @Volatile private var lastTouchMoveEnqueueAt = 0L
     private data class ActiveTouch(val id: Int, var x: Float, var y: Float)
     private val touchLock = Any()
     private val activeTouches = LinkedHashMap<String, ActiveTouch>()
@@ -1009,9 +1008,6 @@ class DeckController(private val app: Application) {
     private var trackpadContactActive = false
     private var tapRelease: Runnable? = null
     private var lastMappedMoveAt = 0L
-    private var lastAxesSentAt = 0L
-    private var lastAxesSent = FloatArray(6)
-
     /**
      * Relative trackpad: movement updates an internal cursor position that the
      * host renders as an overlay sprite inside the virtual screen. Mouse hover
@@ -1325,59 +1321,20 @@ class DeckController(private val app: Application) {
     }
 
     fun sendStick(right: Boolean, x: Float, y: Float, active: Boolean) {
-        val base = if (right) 2 else 0
-        axes[base] = x
-        axes[base + 1] = y
         val stickId = if (right) "right_stick" else "left_stick"
         val stick = touchMappings.firstOrNull { it.id == stickId }
         if (stick != null) {
             val reachX = displayW * if (right) 0.12f else 0.075f
-            val reachY = displayH * if (right) 0.14f else 0.14f
+            val reachY = displayH * 0.14f
             val px = (stick.x * displayW + x * reachX).coerceIn(0f, displayW.toFloat())
             val py = (stick.y * displayH + y * reachY).coerceIn(0f, displayH.toFloat())
             setMappedTouch("mapped:${stick.id}", px, py, active)
         }
-        sendAxes()
     }
 
     fun setTrigger(left: Boolean, pressed: Boolean) {
-        axes[if (left) 4 else 5] = if (pressed) 1f else 0f
+        // Trigger controls share the mapped touchscreen stream with the other buttons.
         sendKey(if (left) KeyEvent.KEYCODE_BUTTON_L2 else KeyEvent.KEYCODE_BUTTON_R2, pressed)
-        sendAxes()
-    }
-
-    private fun sendAxes() {
-        val svc = service ?: return
-        val id = displayId
-        if (id < 0) return
-        // Joystick axes only matter to gamepad-aware apps, so rate-limit them
-        // while always letting the neutral (all-zero) state through.
-        val force = axes.all { it == 0f }
-        val now = SystemClock.uptimeMillis()
-        if (!force && now - lastAxesSentAt < 8L) return
-        lastAxesSentAt = now
-        if (!force && axes.contentEquals(lastAxesSent)) return
-        lastAxesSent = axes.copyOf()
-        val props = arrayOf(MotionEvent.PointerProperties().apply {
-            this.id = 0
-            toolType = MotionEvent.TOOL_TYPE_UNKNOWN
-        })
-        val coords = arrayOf(MotionEvent.PointerCoords().apply {
-            setAxisValue(MotionEvent.AXIS_X, axes[0])
-            setAxisValue(MotionEvent.AXIS_Y, axes[1])
-            setAxisValue(MotionEvent.AXIS_Z, axes[2])
-            setAxisValue(MotionEvent.AXIS_RZ, axes[3])
-            setAxisValue(MotionEvent.AXIS_LTRIGGER, axes[4])
-            setAxisValue(MotionEvent.AXIS_BRAKE, axes[4])
-            setAxisValue(MotionEvent.AXIS_RTRIGGER, axes[5])
-            setAxisValue(MotionEvent.AXIS_GAS, axes[5])
-        })
-        val ev = MotionEvent.obtain(
-            now, now, MotionEvent.ACTION_MOVE, 1, props, coords,
-            0, 0, 1f, 1f, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, InputDevice.SOURCE_JOYSTICK, 0
-        )
-        inject(svc, ev, id)
-        ev.recycle()
     }
 
     /** Forwards direct preview contacts into the same multi-pointer stream as mapped controls. */
@@ -1495,6 +1452,12 @@ class DeckController(private val app: Application) {
         val entries = activeTouches.entries.toList()
         if (id < 0 || entries.isEmpty()) return
         val now = SystemClock.uptimeMillis()
+        // Keep high-frequency analog MOVE events from building an input backlog.
+        // Pointer transitions must remain lossless and are therefore not throttled.
+        if (action == MotionEvent.ACTION_MOVE) {
+            if (now - lastTouchMoveEnqueueAt < 8L) return
+            lastTouchMoveEnqueueAt = now
+        }
         val properties = Array(entries.size) { i ->
             MotionEvent.PointerProperties().apply {
                 this.id = entries[i].value.id
