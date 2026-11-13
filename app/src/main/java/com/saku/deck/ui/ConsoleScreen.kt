@@ -576,6 +576,8 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
                     var moved = false
                     var travel = 0f
                     var releasedAt = 0L
+                    var secondDownAt = -1L
+                    var scrollTravel = 0f
                     try {
                         var active = true
                         while (active) {
@@ -592,14 +594,28 @@ private fun TitanTrackpad(c: DeckController, modifier: Modifier) {
                             }
 
                             val pressed = event.changes.filter { it.pressed }
-                            if (pressed.size >= 2) {
+                            // A real two-finger scroll starts only when the
+                            // second finger lands within 200 ms of the first.
+                            // A late second finger (palm, clumsy grip) is
+                            // ignored, so one-finger moves never turn into an
+                            // accidental scroll, which made the cursor feel
+                            // stuck.
+                            if (secondDownAt < 0L && pressed.size >= 2) {
+                                secondDownAt = primary.uptimeMillis
+                            }
+                            val twoFinger = pressed.size >= 2 &&
+                                secondDownAt in 0L..downTime + 200L
+                            if (twoFinger) {
                                 if (hold) {
                                     c.trackpadPress(false)
                                     hold = false
                                 }
                                 val dx = pressed.sumOf { it.positionChange().x.toDouble() }.toFloat()
                                 val dy = pressed.sumOf { it.positionChange().y.toDouble() }.toFloat()
-                                if (dx != 0f || dy != 0f) {
+                                scrollTravel += kotlin.math.abs(dx) + kotlin.math.abs(dy)
+                                // Small dead zone: resting fingers must not
+                                // emit wheel events.
+                                if (scrollTravel > 4f && (dx != 0f || dy != 0f)) {
                                     c.scrollTrackpad(
                                         -dx / pressed.size / 28f,
                                         -dy / pressed.size / 28f,
@@ -1298,19 +1314,17 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
 
     LaunchedEffect(c.externalKeyboardOpen) {
         if (c.externalKeyboardOpen) {
-            // MIUI/Android can report the bridge as open before its host
-            // window has regained focus from the virtual display. Retry the
-            // focus transaction briefly instead of showing an IME that is
-            // immediately dismissed by the next window-focus change.
-            repeat(8) {
-                if (!c.externalKeyboardOpen) return@LaunchedEffect
+            // Keep-alive: while the bridge is open, periodically make sure
+            // the field is focused and the IME is up. Injected input to the
+            // virtual display keeps stealing window focus on MIUI, which
+            // hid the keyboard mid-typing (muncul ilang muncul ilang).
+            // show() on an already visible IME is a no-op, so this heals
+            // focus theft without flapping the keyboard.
+            while (c.externalKeyboardOpen) {
                 if (view.hasWindowFocus()) {
                     focusRequester.requestFocus()
-                    kotlinx.coroutines.delay(90)
-                    if (c.externalKeyboardOpen && view.hasWindowFocus()) {
-                        keyboard?.show()
-                        return@LaunchedEffect
-                    }
+                    keyboard?.show()
+                    kotlinx.coroutines.delay(280)
                 } else {
                     kotlinx.coroutines.delay(90)
                 }
@@ -1330,7 +1344,7 @@ private fun ExternalKeyboardBridge(c: DeckController, modifier: Modifier) {
         val listener = android.view.ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
             if (hasFocus && c.externalKeyboardOpen) {
                 val now = android.os.SystemClock.uptimeMillis()
-                if (now - lastRecoverAt >= 300L) {
+                if (now - lastRecoverAt >= 600L) {
                     lastRecoverAt = now
                     view.post {
                         if (c.externalKeyboardOpen) {

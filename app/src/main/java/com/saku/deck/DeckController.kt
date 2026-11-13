@@ -1546,7 +1546,7 @@ class DeckController(private val app: Application) {
         private const val TRACKPAD_TOUCH_KEY = "trackpad_cursor"
         private const val LANDSCAPE_RESOLUTION_PREFS = "saku_deck_landscape_resolution"
         private const val LANDSCAPE_FRAME_PREFS = "saku_deck_landscape_frame"
-        private const val TRACKPAD_MIN_GAIN = 0.55f
+        private const val TRACKPAD_MIN_GAIN = 0.8f
         private const val TRACKPAD_MAX_GAIN = 1.6f
         private const val MAPPING_PREFS = "mobile_legends_touch_mapping"
         private const val CONTROL_LAYOUT_PREFS = "mobile_legends_control_layout"
