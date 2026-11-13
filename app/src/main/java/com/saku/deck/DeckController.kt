@@ -1452,10 +1452,11 @@ class DeckController(private val app: Application) {
         val entries = activeTouches.entries.toList()
         if (id < 0 || entries.isEmpty()) return
         val now = SystemClock.uptimeMillis()
-        // Keep high-frequency analog MOVE events from building an input backlog.
-        // Pointer transitions must remain lossless and are therefore not throttled.
+        // Keep analog updates near the game's 60 Hz frame cadence. This
+        // reduces Binder/InputManager work and prevents input traffic from
+        // competing with MLBB's render thread. DOWN/UP transitions stay lossless.
         if (action == MotionEvent.ACTION_MOVE) {
-            if (now - lastTouchMoveEnqueueAt < 8L) return
+            if (now - lastTouchMoveEnqueueAt < 16L) return
             lastTouchMoveEnqueueAt = now
         }
         val properties = Array(entries.size) { i ->
