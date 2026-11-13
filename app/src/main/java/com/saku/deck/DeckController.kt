@@ -618,10 +618,11 @@ class DeckController(private val app: Application) {
         val entries = activeTouches.entries.toList()
         if (id < 0 || entries.isEmpty()) return
         val now = SystemClock.uptimeMillis()
-        // Avoid flooding InputManager with redundant high-frequency MOVE samples.
-        // DOWN/UP transitions are never throttled.
+        // Keep analog updates near the game's 60 Hz frame cadence. This
+        // reduces Binder/InputManager work and prevents input traffic from
+        // competing with MLBB's render thread. DOWN/UP transitions stay lossless.
         if (action == MotionEvent.ACTION_MOVE) {
-            if (now - lastTouchMoveEnqueueAt < 8L) return
+            if (now - lastTouchMoveEnqueueAt < 16L) return
             lastTouchMoveEnqueueAt = now
         }
         val properties = Array(entries.size) { i ->
