@@ -68,6 +68,10 @@ class DeckController(private val app: Application) {
     private var binding = false
     private var pendingEnsure = false
     private val worker = Executors.newSingleThreadExecutor()
+    // Input injection must never block Compose's UI thread. Keep events ordered on
+    // a dedicated serial worker, separate from display-management operations.
+    private val inputWorker = Executors.newSingleThreadExecutor()
+    @Volatile private var lastTouchMoveEnqueueAt = 0L
     private val main = Handler(Looper.getMainLooper())
 
     private var surface: Surface? = null
@@ -76,8 +80,6 @@ class DeckController(private val app: Application) {
     private var displayW = 0
     private var displayH = 0
 
-    // lx, ly, rx, ry, left trigger, right trigger
-    private val axes = FloatArray(6)
     private val keyDownTimes = HashMap<Int, Long>()
     private data class ActiveTouch(val id: Int, var x: Float, var y: Float)
     private val touchLock = Any()
@@ -504,40 +506,11 @@ class DeckController(private val app: Application) {
             val py = (stick.y * displayH + y * reachY).coerceIn(0f, displayH.toFloat())
             setMappedTouch("mapped:${stick.id}", px, py, active)
         }
-        sendAxes()
     }
 
     fun setTrigger(left: Boolean, pressed: Boolean) {
-        axes[if (left) 4 else 5] = if (pressed) 1f else 0f
+        // Triggers use the same mapped touchscreen stream as the other deck buttons.
         sendKey(if (left) KeyEvent.KEYCODE_BUTTON_L2 else KeyEvent.KEYCODE_BUTTON_R2, pressed)
-        sendAxes()
-    }
-
-    private fun sendAxes() {
-        val svc = service ?: return
-        val id = displayId
-        if (id < 0) return
-        val now = SystemClock.uptimeMillis()
-        val props = arrayOf(MotionEvent.PointerProperties().apply {
-            this.id = 0
-            toolType = MotionEvent.TOOL_TYPE_UNKNOWN
-        })
-        val coords = arrayOf(MotionEvent.PointerCoords().apply {
-            setAxisValue(MotionEvent.AXIS_X, axes[0])
-            setAxisValue(MotionEvent.AXIS_Y, axes[1])
-            setAxisValue(MotionEvent.AXIS_Z, axes[2])
-            setAxisValue(MotionEvent.AXIS_RZ, axes[3])
-            setAxisValue(MotionEvent.AXIS_LTRIGGER, axes[4])
-            setAxisValue(MotionEvent.AXIS_BRAKE, axes[4])
-            setAxisValue(MotionEvent.AXIS_RTRIGGER, axes[5])
-            setAxisValue(MotionEvent.AXIS_GAS, axes[5])
-        })
-        val ev = MotionEvent.obtain(
-            now, now, MotionEvent.ACTION_MOVE, 1, props, coords,
-            0, 0, 1f, 1f, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, InputDevice.SOURCE_JOYSTICK, 0
-        )
-        inject(svc, ev, id)
-        ev.recycle()
     }
 
     /** Forwards direct preview contacts into the same multi-pointer stream as mapped controls. */
@@ -648,6 +621,12 @@ class DeckController(private val app: Application) {
         val entries = activeTouches.entries.toList()
         if (id < 0 || entries.isEmpty()) return
         val now = SystemClock.uptimeMillis()
+        // Avoid flooding InputManager with redundant high-frequency MOVE samples.
+        // DOWN/UP transitions are never throttled.
+        if (action == MotionEvent.ACTION_MOVE) {
+            if (now - lastTouchMoveEnqueueAt < 8L) return
+            lastTouchMoveEnqueueAt = now
+        }
         val properties = Array(entries.size) { i ->
             MotionEvent.PointerProperties().apply {
                 this.id = entries[i].value.id
@@ -671,7 +650,26 @@ class DeckController(private val app: Application) {
     }
 
     private fun inject(svc: IDeckService, ev: android.view.InputEvent, id: Int) {
-        runCatching { svc.injectEvent(Bundle().apply { putParcelable("event", ev) }, id) }
+        // AIDL calls can stall while the system input service is busy. Copy the
+        // event before returning to Compose, then serialize injection off-thread.
+        val queuedEvent: android.view.InputEvent = when (ev) {
+            is MotionEvent -> MotionEvent.obtain(ev)
+            is KeyEvent -> KeyEvent(ev)
+            else -> return
+        }
+        runCatching {
+            inputWorker.execute {
+                try {
+                    svc.injectEvent(Bundle().apply { putParcelable("event", queuedEvent) }, id)
+                } catch (_: Throwable) {
+                    // A disconnected Shizuku service must not crash the input/UI path.
+                } finally {
+                    (queuedEvent as? MotionEvent)?.recycle()
+                }
+            }
+        }.onFailure {
+            (queuedEvent as? MotionEvent)?.recycle()
+        }
     }
 
     /** Returns true when the back press was used by the deck. */
