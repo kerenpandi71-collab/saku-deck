@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import com.saku.deck.service.DeckUserService
 import rikka.shizuku.Shizuku
 import java.io.File
+import java.util.ArrayDeque
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -349,6 +350,11 @@ class DeckController(private val app: Application) {
     private val worker = Executors.newSingleThreadExecutor()
     // Keep Binder input injection off the Compose/UI thread; preserve event order.
     private val inputWorker = Executors.newSingleThreadExecutor()
+    // Keep only the newest pending MOVE between transition events. DOWN/UP and key events are never dropped.
+    private data class PendingInput(val service: IDeckService, val event: android.view.InputEvent, val displayId: Int)
+    private val inputQueueLock = Any()
+    private val pendingInput = ArrayDeque<PendingInput>()
+    private var inputDrainScheduled = false
     private val fpsWorker = Executors.newSingleThreadExecutor()
     private val fpsQueryRunning = AtomicBoolean(false)
     @Volatile private var fpsCapturePackage: String? = null
@@ -1447,14 +1453,9 @@ class DeckController(private val app: Application) {
                 else {
                     point.x = x
                     point.y = y
-                    // Analog sticks and skill wheels fire up to 120 times per
-                    // second; coalesce MOVE injection to about 8 ms so the
-                    // injected input stream never floods the game.
-                    val now = SystemClock.uptimeMillis()
-                    if (now - lastMappedMoveAt >= 8L) {
-                        lastMappedMoveAt = now
-                        dispatchTouchLocked(MotionEvent.ACTION_MOVE)
-                    }
+                    // dispatchTouchLocked applies one shared 60 Hz limit for all mapped and direct contacts.
+                    // The input queue then replaces stale pending MOVE samples without crossing DOWN/UP barriers.
+                    dispatchTouchLocked(MotionEvent.ACTION_MOVE)
                 }
             } else {
                 removeTouchLocked(key)
@@ -1524,17 +1525,56 @@ class DeckController(private val app: Application) {
             is KeyEvent -> KeyEvent(ev)
             else -> return
         }
-        runCatching {
-            inputWorker.execute {
-                try {
-                    svc.injectEvent(Bundle().apply { putParcelable("event", queuedEvent) }, id)
-                } catch (_: Throwable) {
-                    // Shizuku may disconnect while an event is waiting in the queue.
-                } finally {
-                    (queuedEvent as? MotionEvent)?.recycle()
-                }
+        val item = PendingInput(svc, queuedEvent, id)
+        synchronized(inputQueueLock) {
+            // Consecutive MOVE events describe the same active pointer stream. Keep
+            // the newest coordinates; never replace across a DOWN/UP or key barrier.
+            val last = pendingInput.peekLast()
+            val replaceMove = queuedEvent is MotionEvent &&
+                queuedEvent.actionMasked == MotionEvent.ACTION_MOVE &&
+                last?.event is MotionEvent &&
+                (last.event as MotionEvent).actionMasked == MotionEvent.ACTION_MOVE &&
+                last.displayId == id
+            if (replaceMove) {
+                recycleInput(pendingInput.removeLast().event)
             }
-        }.onFailure { (queuedEvent as? MotionEvent)?.recycle() }
+            pendingInput.addLast(item)
+            if (!inputDrainScheduled) {
+                inputDrainScheduled = true
+                runCatching { inputWorker.execute { drainInputQueue() } }
+                    .onFailure {
+                        inputDrainScheduled = false
+                        while (pendingInput.isNotEmpty()) recycleInput(pendingInput.removeFirst().event)
+                    }
+            }
+        }
+    }
+
+    private fun recycleInput(event: android.view.InputEvent) {
+        (event as? MotionEvent)?.recycle()
+    }
+
+    private fun drainInputQueue() {
+        while (true) {
+            val item = synchronized(inputQueueLock) {
+                if (pendingInput.isEmpty()) {
+                    inputDrainScheduled = false
+                    null
+                } else {
+                    pendingInput.removeFirst()
+                }
+            } ?: return
+            try {
+                item.service.injectEvent(
+                    Bundle().apply { putParcelable("event", item.event) },
+                    item.displayId,
+                )
+            } catch (_: Throwable) {
+                // Shizuku may disconnect while queued input is being drained.
+            } finally {
+                recycleInput(item.event)
+            }
+        }
     }
 
     /** Returns true when the back press was used by the deck. */
