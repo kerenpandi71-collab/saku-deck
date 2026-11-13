@@ -996,6 +996,22 @@ class DeckController(private val app: Application) {
         message = "Layout awal dipulihkan. Tekan SIMPAN untuk menyimpan."
     }
 
+    /** Snap the side-panel cluster back to the preset ML arrangement. */
+    fun applyMlLayout() {
+        controlPositions = DEFAULT_CONTROL_POSITIONS
+        if (controlLayoutEditing) {
+            message = "Layout ML dipasang. Tekan SIMPAN untuk menyimpan."
+            return
+        }
+        val prefs = app.getSharedPreferences(CONTROL_LAYOUT_PREFS, Context.MODE_PRIVATE).edit().clear()
+        controlPositions.forEach {
+            prefs.putFloat(it.id + "_x", it.x)
+            prefs.putFloat(it.id + "_y", it.y)
+        }
+        prefs.apply()
+        message = "Layout ML dipasang: analog kiri, skill di kanan."
+    }
+
     private val logFile by lazy { File(app.filesDir, "saku_log.txt") }
 
     fun errorLog(): String = runCatching {
@@ -1578,15 +1594,17 @@ class DeckController(private val app: Application) {
             TouchMapping("quick_item", "Item cepat • R1", "R1", KeyEvent.KEYCODE_BUTTON_R1, 0.83f, 0.76f),
             TouchMapping("battle_spell", "Battle Spell • R2", "SP", KeyEvent.KEYCODE_BUTTON_R2, 0.83f, 0.86f),
         )
+        // Layout gaya Mobile Legends: analog kiri tetap di panel kiri,
+        // cluster skill di panel kanan (koordinat relatif panel kanan).
         private val DEFAULT_CONTROL_POSITIONS = listOf(
-            ControlPosition("face_x", 0.50f, 0.17f),
-            ControlPosition("face_y", 0.23f, 0.36f),
-            ControlPosition("face_a", 0.77f, 0.36f),
-            ControlPosition("face_b", 0.50f, 0.55f),
-            ControlPosition("extra_spell", 0.91f, 0.58f),
-            ControlPosition("extra_regen", 0.78f, 0.88f),
-            ControlPosition("extra_recall", 0.94f, 0.86f),
-            ControlPosition("right_stick", 0.50f, 0.82f),
+            ControlPosition("face_x", 0.56f, 0.66f),   // Skill 1
+            ControlPosition("face_y", 0.72f, 0.52f),   // Skill 2
+            ControlPosition("face_b", 0.88f, 0.42f),   // Ultimate
+            ControlPosition("face_a", 0.86f, 0.78f),   // Serang
+            ControlPosition("extra_spell", 0.56f, 0.86f),
+            ControlPosition("extra_regen", 0.70f, 0.16f),
+            ControlPosition("extra_recall", 0.88f, 0.16f),
+            ControlPosition("right_stick", 0.22f, 0.22f),
         )
     }
 }

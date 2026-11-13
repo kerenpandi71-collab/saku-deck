@@ -119,7 +119,7 @@ fun ConsoleScreen(c: DeckController) {
     ) {
         // Widen the center display by slightly reducing both side panels as
         // the user increases frame width. This changes host layout, not render resolution.
-        val baseSide = (maxWidth * 0.22f).coerceIn(150.dp, 260.dp)
+        val baseSide = (maxWidth * 0.20f).coerceIn(150.dp, 240.dp)
         val side = baseSide * (2f - c.landscapeFrameWidth)
         val scale = minOf(maxHeight.value / 360f, side.value / 180f).coerceIn(0.7f, 1.8f)
         // Follow the physical host orientation. The Android sensor decides
@@ -209,6 +209,7 @@ fun ConsoleScreen(c: DeckController) {
                     add("VISIBILITAS" to { c.visibilityMenuOpen = true })
                     add("UKURAN A/B/X/Y" to { c.controlSizeMenuOpen = true })
                     add("ATUR POSISI" to { c.beginControlLayoutEdit() })
+                    add("LAYOUT ML" to { c.applyMlLayout() })
                     add("LOG ERROR" to { c.logDialogOpen = true })
                     add("KELUAR DARI SAKU DECK" to {
                         hostActivity?.let { activity ->
@@ -1234,6 +1235,7 @@ private fun ControlLayoutBar(c: DeckController, modifier: Modifier) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text("SERET KONTROL", color = Color.White, fontSize = 8.sp)
+        Text("ML", Modifier.clickable { c.applyMlLayout() }.padding(4.dp), color = Deck.Accent, fontSize = 9.sp)
         Text("RESET", Modifier.clickable { c.resetControlLayout() }.padding(4.dp), color = Color.White, fontSize = 9.sp)
         Text("BATAL", Modifier.clickable { c.cancelControlLayoutEdit() }.padding(4.dp), color = Color.White, fontSize = 9.sp)
         Text("SIMPAN", Modifier.clickable { c.saveControlLayout() }.padding(4.dp), color = Deck.Accent, fontSize = 9.sp)
