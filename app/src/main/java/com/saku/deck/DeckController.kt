@@ -1041,7 +1041,6 @@ class DeckController(private val app: Application) {
     private var lastCursorSpriteAt = 0L
     private var trackpadContactActive = false
     private var tapRelease: Runnable? = null
-    private var lastMappedMoveAt = 0L
     /**
      * Relative trackpad: movement updates an internal cursor position that the
      * host renders as an overlay sprite inside the virtual screen. Mouse hover
