@@ -131,6 +131,8 @@ fun ConsoleScreen(c: DeckController) {
 
         if (portraitLayout) {
             TitanPortraitShell(c, Modifier.fillMaxSize())
+        } else if (c.mlOnlyMode) {
+            MlLayout(c, scale, Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 8.dp))
         } else if (!c.gamepadHidden) {
             Row(
                 Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 8.dp),
@@ -201,6 +203,7 @@ fun ConsoleScreen(c: DeckController) {
                         add("RESOLUSI CUSTOM LANDSCAPE" to { c.landscapeResolutionDialogOpen = true })
                     }
                     add("ROTASI OTOMATIS ANDROID" to { c.assistantMenuOpen = false })
+                    add((if (c.mlOnlyMode) "MODE GAMEPAD LENGKAP" else "MODE ML") to { c.toggleMlOnlyMode() })
                     add((if (c.gamepadHidden) "TAMPILKAN PAD" else "SEMBUNYIKAN PAD") to { c.toggleGamepadHidden() })
                     add((if (c.externalKeyboardOpen) "TUTUP KEYBOARD LUAR" else "KEYBOARD LUAR") to {
                         c.updateExternalKeyboardOpen(!c.externalKeyboardOpen)
@@ -1045,6 +1048,167 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
                 Column(verticalArrangement = Arrangement.spacedBy((5 * scale).dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     if ("home" !in c.hiddenControls) PillButton("HOME", scale) { if (it) c.openPicker() }
                     PillButton("RECENT", scale, accent = true) { if (it) c.openRecentTasks() }
+                    if ("menu" !in c.hiddenControls) PillButton("MENU", scale, accent = true) { if (it) c.openPicker() }
+                }
+            }
+        }
+    }
+}
+
+/** Dedicated Mobile Legends layout: movement analog on the left, skill cluster on
+ *  the right, game screen centered between them. Reuses the gamepad control ids,
+ *  key codes, stored positions and sizes, so MAPPING ML, ATUR POSISI and
+ *  UKURAN A/B/X/Y keep working unchanged. */
+@Composable
+private fun MlLayout(c: DeckController, scale: Float, modifier: Modifier) {
+    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        val side = (maxWidth * 0.20f).coerceIn(130.dp, 230.dp)
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                Modifier.width(side).fillMaxHeight().padding(vertical = (4 * scale).dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    val stickSize = (116 * scale).dp
+                    val stickPosition = c.controlPositions.first { it.id == "left_stick" }
+                    if ("left_stick" !in c.hiddenControls) AnalogStick(
+                        diameter = stickSize,
+                        modifier = Modifier.offset(
+                            x = side * (stickPosition.x - 0.5f),
+                            y = maxHeight * (stickPosition.y - 0.5f),
+                        ),
+                        onMove = { x, y, active -> c.sendStick(false, x, y, active) },
+                        layoutEditing = c.controlLayoutEditing,
+                        onPositionDrag = { dx, dy ->
+                            c.moveControlPosition(
+                                "left_stick",
+                                stickPosition.x + dx * stickSize.value / side.value.coerceAtLeast(1f),
+                                stickPosition.y + dy * stickSize.value / maxHeight.value.coerceAtLeast(1f),
+                                stickSize.value / (2 * side.value.coerceAtLeast(1f)),
+                                stickSize.value / (2 * maxHeight.value.coerceAtLeast(1f)),
+                            )
+                        },
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy((10 * scale).dp)) {
+                    if ("back" !in c.hiddenControls) PillButton("KEMBALI", scale) { c.sendKey(KeyEvent.KEYCODE_BACK, it) }
+                    if ("home" !in c.hiddenControls) PillButton("HOME", scale) { c.sendKey(KeyEvent.KEYCODE_HOME, it) }
+                }
+            }
+            ScreenArea(
+                c,
+                Modifier.weight(1f).fillMaxHeight(c.landscapeFrameHeight)
+                    .padding(horizontal = 4.dp),
+            )
+            Column(
+                Modifier.width(side).fillMaxHeight().padding(vertical = (4 * scale).dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    val skillControls = listOf(
+                        Triple("face_x", "S1", KeyEvent.KEYCODE_BUTTON_X) to Deck.ButtonX,
+                        Triple("face_y", "S2", KeyEvent.KEYCODE_BUTTON_Y) to Deck.ButtonY,
+                        Triple("face_b", "S3", KeyEvent.KEYCODE_BUTTON_B) to Deck.ButtonB,
+                    ).filterNot { (control, _) -> control.first in c.hiddenControls }
+                    skillControls.forEach { (control, color) ->
+                        val (id, label, keyCode) = control
+                        val buttonSize = c.controlSizes[id]!!.dp
+                        val position = c.controlPositions.first { it.id == id }
+                        SkillWheelButton(
+                            label = label,
+                            color = color,
+                            diameter = buttonSize,
+                            modifier = Modifier.offset(
+                                x = maxWidth * position.x - buttonSize / 2,
+                                y = maxHeight * position.y - buttonSize / 2,
+                            ),
+                            layoutEditing = c.controlLayoutEditing,
+                            onWheel = { dx, dy, pressed -> c.sendSkillWheel(keyCode, dx, dy, pressed) },
+                            onPositionDrag = { dx, dy ->
+                                c.moveControlPosition(
+                                    id,
+                                    position.x + dx * buttonSize.value / maxWidth.value.coerceAtLeast(1f),
+                                    position.y + dy * buttonSize.value / maxHeight.value.coerceAtLeast(1f),
+                                    buttonSize.value / (2 * maxWidth.value.coerceAtLeast(1f)),
+                                    buttonSize.value / (2 * maxHeight.value.coerceAtLeast(1f)),
+                                )
+                            },
+                        )
+                    }
+                    // Basic attack: bigger tap/hold button, no aim wheel.
+                    val atkSize = c.controlSizes["face_a"]!! * 1.35f
+                    val atkPosition = c.controlPositions.first { it.id == "face_a" }
+                    if ("face_a" !in c.hiddenControls) LayoutRoundButton(
+                        label = "ATK",
+                        color = Deck.ButtonA,
+                        diameter = atkSize.dp,
+                        modifier = Modifier.offset(
+                            x = maxWidth * atkPosition.x - atkSize.dp / 2,
+                            y = maxHeight * atkPosition.y - atkSize.dp / 2,
+                        ),
+                        layoutEditing = c.controlLayoutEditing,
+                        onPress = { pressed -> c.sendKey(KeyEvent.KEYCODE_BUTTON_A, pressed) },
+                        onPositionDrag = { dx, dy ->
+                            c.moveControlPosition(
+                                "face_a",
+                                atkPosition.x + dx * atkSize / maxWidth.value.coerceAtLeast(1f),
+                                atkPosition.y + dy * atkSize / maxHeight.value.coerceAtLeast(1f),
+                                atkSize / (2 * maxWidth.value.coerceAtLeast(1f)),
+                                atkSize / (2 * maxHeight.value.coerceAtLeast(1f)),
+                            )
+                        },
+                    )
+                    val extraControls = listOf(
+                        Triple("extra_spell", "SP", KeyEvent.KEYCODE_BUTTON_R2) to Deck.Accent,
+                        Triple("extra_regen", "RG", KeyEvent.KEYCODE_BUTTON_L1) to Deck.ButtonY,
+                        Triple("extra_recall", "RC", KeyEvent.KEYCODE_BUTTON_SELECT) to Deck.ButtonX,
+                    ).filterNot { (control, _) -> control.first in c.hiddenControls }
+                    extraControls.forEach { (control, color) ->
+                        val (id, label, keyCode) = control
+                        val buttonSize = 50.dp
+                        val position = c.controlPositions.first { it.id == id }
+                        val moveButton = { dx: Float, dy: Float ->
+                            c.moveControlPosition(
+                                id,
+                                position.x + dx * buttonSize.value / maxWidth.value.coerceAtLeast(1f),
+                                position.y + dy * buttonSize.value / maxHeight.value.coerceAtLeast(1f),
+                                buttonSize.value / (2 * maxWidth.value.coerceAtLeast(1f)),
+                                buttonSize.value / (2 * maxHeight.value.coerceAtLeast(1f)),
+                            )
+                        }
+                        if (id == "extra_spell") {
+                            SkillWheelButton(
+                                label = label,
+                                color = color,
+                                diameter = buttonSize,
+                                modifier = Modifier.offset(
+                                    x = maxWidth * position.x - buttonSize / 2,
+                                    y = maxHeight * position.y - buttonSize / 2,
+                                ),
+                                layoutEditing = c.controlLayoutEditing,
+                                onWheel = { dx, dy, pressed -> c.sendSkillWheel(keyCode, dx, dy, pressed) },
+                                onPositionDrag = moveButton,
+                            )
+                        } else {
+                            LayoutRoundButton(
+                                label = label,
+                                color = color,
+                                diameter = buttonSize,
+                                modifier = Modifier.offset(
+                                    x = maxWidth * position.x - buttonSize / 2,
+                                    y = maxHeight * position.y - buttonSize / 2,
+                                ),
+                                layoutEditing = c.controlLayoutEditing,
+                                onPress = { pressed -> c.sendKey(keyCode, pressed) },
+                                onPositionDrag = moveButton,
+                            )
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy((10 * scale).dp)) {
+                    if ("select" !in c.hiddenControls) PillButton("SELECT", scale) { c.sendKey(KeyEvent.KEYCODE_BUTTON_SELECT, it) }
                     if ("menu" !in c.hiddenControls) PillButton("MENU", scale, accent = true) { if (it) c.openPicker() }
                 }
             }

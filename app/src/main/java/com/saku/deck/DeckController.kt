@@ -81,6 +81,10 @@ class DeckController(private val app: Application) {
     var visibilityMenuOpen by mutableStateOf(false)
     var assistantMenuOpen by mutableStateOf(false)
     var titanPortraitMode by mutableStateOf(loadTitanPortraitMode())
+    // Dedicated Mobile Legends layout: analog left, skill cluster right, screen centered.
+    // Defaults to ON because this branch is the ML-specialized build.
+    var mlOnlyMode by mutableStateOf(loadMlOnlyMode())
+        private set
     var virtualFps by mutableIntStateOf(0)
         private set
 
@@ -242,6 +246,15 @@ class DeckController(private val app: Application) {
         message = if (titanPortraitMode) "Mode Unihertz Titan aktif." else "Mode Landscape aktif."
     }
 
+    fun toggleMlOnlyMode() {
+        mlOnlyMode = !mlOnlyMode
+        app.getSharedPreferences("saku_deck_display_mode", Context.MODE_PRIVATE)
+            .edit().putBoolean("ml_only", mlOnlyMode).apply()
+        assistantMenuOpen = false
+        message = if (mlOnlyMode) "Mode ML aktif: analog kiri, skill kanan."
+        else "Mode gamepad lengkap aktif."
+    }
+
     fun applyLandscapeResolution(width: Int, height: Int, dpi: Int) {
         if (width !in 640..3840 || height !in 360..2160 || width <= height || dpi !in 120..640) {
             message = "Resolusi Landscape harus 640–3840 × 360–2160, lebar lebih besar dari tinggi, DPI 120–640."
@@ -319,6 +332,10 @@ class DeckController(private val app: Application) {
     private fun loadTitanPortraitMode(): Boolean =
         app.getSharedPreferences("saku_deck_display_mode", Context.MODE_PRIVATE)
             .getBoolean("titan_portrait", false)
+
+    private fun loadMlOnlyMode(): Boolean =
+        app.getSharedPreferences("saku_deck_display_mode", Context.MODE_PRIVATE)
+            .getBoolean("ml_only", true)
 
     @Volatile
     private var service: IDeckService? = null
@@ -1579,6 +1596,7 @@ class DeckController(private val app: Application) {
             TouchMapping("battle_spell", "Battle Spell • R2", "SP", KeyEvent.KEYCODE_BUTTON_R2, 0.83f, 0.86f),
         )
         private val DEFAULT_CONTROL_POSITIONS = listOf(
+            ControlPosition("left_stick", 0.50f, 0.50f),
             ControlPosition("face_x", 0.50f, 0.17f),
             ControlPosition("face_y", 0.23f, 0.36f),
             ControlPosition("face_a", 0.77f, 0.36f),
