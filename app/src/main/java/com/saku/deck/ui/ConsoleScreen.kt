@@ -95,6 +95,7 @@ import kotlin.math.roundToInt
 
 @Composable
 fun ConsoleScreen(c: DeckController) {
+    var portraitJoystickMode by remember { mutableStateOf(false) }
     val hostActivity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
     LaunchedEffect(c) {
         while (true) {
@@ -130,7 +131,7 @@ fun ConsoleScreen(c: DeckController) {
         }
 
         if (portraitLayout) {
-            TitanPortraitShell(c, Modifier.fillMaxSize())
+            TitanPortraitShell(c, portraitJoystickMode, Modifier.fillMaxSize())
         } else if (c.mlOnlyMode) {
             MlLayout(c, scale, Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 8.dp))
         } else if (!c.gamepadHidden) {
@@ -201,6 +202,13 @@ fun ConsoleScreen(c: DeckController) {
                     if (!portraitLayout) {
                         add("UKURAN KOTAK LAYAR" to { c.landscapeFrameDialogOpen = true })
                         add("RESOLUSI CUSTOM LANDSCAPE" to { c.landscapeResolutionDialogOpen = true })
+                    }
+                    if (portraitLayout) {
+                        add((if (portraitJoystickMode) "MATIKAN MODE JOYSTICK" else "MODE JOYSTICK") to {
+                            portraitJoystickMode = !portraitJoystickMode
+                            if (portraitJoystickMode) c.updateExternalKeyboardOpen(false)
+                        })
+                        if (portraitJoystickMode) add("MAPPING JOYSTICK" to { c.openMappingMenu() })
                     }
                     add("ROTASI OTOMATIS ANDROID" to { c.assistantMenuOpen = false })
                     add((if (c.mlOnlyMode) "MODE GAMEPAD LENGKAP" else "MODE ML") to { c.toggleMlOnlyMode() })
@@ -279,7 +287,7 @@ fun ConsoleScreen(c: DeckController) {
         if (c.recentsOpen) {
             RecentTasksDialog(c)
         }
-        if (c.externalKeyboardOpen) {
+        if (c.externalKeyboardOpen && !(portraitLayout && portraitJoystickMode)) {
             ExternalKeyboardBridge(
                 c,
                 // The bridge alone lifts above the soft keyboard; the deck
@@ -529,7 +537,7 @@ private fun RecentTasksDialog(c: DeckController) {
 }
 
 @Composable
-private fun TitanPortraitShell(c: DeckController, modifier: Modifier) {
+private fun TitanPortraitShell(c: DeckController, joystickMode: Boolean, modifier: Modifier) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         // Use the full physical phone width; the old 360dp cap made the Titan body look tiny
         // on the Redmi 12C when rendered inside the portrait host window.
@@ -547,8 +555,12 @@ private fun TitanPortraitShell(c: DeckController, modifier: Modifier) {
             // Keep the virtual screen tall below the compact status strip.
             ScreenArea(c, Modifier.fillMaxWidth().weight(1.55f))
             TitanNavigationRow(c)
-            TitanKeyboard(c)
-            TitanTrackpad(c, Modifier.fillMaxWidth().weight(0.48f))
+            if (joystickMode) {
+                PortraitJoystickControls(c, Modifier.fillMaxWidth().weight(0.78f))
+            } else {
+                TitanKeyboard(c)
+                TitanTrackpad(c, Modifier.fillMaxWidth().weight(0.48f))
+            }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 5.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
