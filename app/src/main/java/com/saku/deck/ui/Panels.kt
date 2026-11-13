@@ -139,6 +139,7 @@ fun ShizukuPanel(c: DeckController) {
             ShizukuState.CONNECTING, ShizukuState.READY -> {
                 CircularProgressIndicator(color = Deck.Accent, modifier = Modifier.size(28.dp))
                 Info("Menghubungkan ke Shizuku…")
+                OutlinedButton(onClick = { c.refresh() }) { Text("Cek lagi", color = Deck.Ink) }
             }
         }
     }

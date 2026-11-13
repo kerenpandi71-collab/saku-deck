@@ -68,6 +68,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
@@ -97,7 +99,9 @@ fun ConsoleScreen(c: DeckController) {
     LaunchedEffect(c) {
         while (true) {
             c.refreshVirtualFps()
-            delay(1000)
+            // Each poll spawns several dumpsys shell processes; polling
+            // every second stole CPU from the game on low-end devices.
+            delay(2000)
         }
     }
     BoxWithConstraints(
@@ -164,8 +168,22 @@ fun ConsoleScreen(c: DeckController) {
             )
         }
         val assistantMenuMaxHeight = maxHeight * 0.72f
+        // The menu must open UPWARD from the bubble and stay inside the
+        // screen: anchored at the bubble it used to extend past the bottom
+        // edge (the bubble usually rests in a corner), leaving items
+        // unreachable. Measured stack size keeps the bubble anchored while
+        // the menu grows above it, clamped to the root bounds.
+        var assistantStackSize by remember { mutableStateOf(IntSize.Zero) }
         Column(
-            Modifier.offset { IntOffset(assistantOffset.x.roundToInt(), assistantOffset.y.roundToInt()) },
+            Modifier.onSizeChanged { assistantStackSize = it }.offset {
+                val stackWidth = assistantStackSize.width.toFloat()
+                val stackHeight = assistantStackSize.height.toFloat()
+                val x = (assistantOffset.x + bubbleSizePx - stackWidth)
+                    .coerceIn(0f, (rootWidthPx - stackWidth).coerceAtLeast(0f))
+                val y = (assistantOffset.y + bubbleSizePx - stackHeight)
+                    .coerceIn(0f, (rootHeightPx - stackHeight).coerceAtLeast(0f))
+                IntOffset(x.roundToInt(), y.roundToInt())
+            },
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
@@ -196,7 +214,7 @@ fun ConsoleScreen(c: DeckController) {
                         hostActivity?.let { activity ->
                             // Finish only after the virtual display is released,
                             // navigation flags are restored and Shizuku is unbound.
-                            c.shutdown { activity.finish() }
+                            c.shutdown { activity.finishAffinity() }
                         }
                     })
                     }.forEach { (label, action) ->
@@ -726,6 +744,7 @@ private fun TitanNavigationRow(c: DeckController) {
 @Composable
 private fun TitanKeyboard(c: DeckController) {
     val repeatScope = rememberCoroutineScope()
+    val keyView = LocalView.current
     val letterRows = listOf(
         listOf("Q","W","E","R","T","Y","U","I","O","P"),
         listOf("A","S","D","F","G","H","J","K","L"),
@@ -774,13 +793,14 @@ private fun TitanKeyboard(c: DeckController) {
                 row.forEach { key ->
                     val wide = key == "⇧" || key == "⌫"
                     Box(
-                        Modifier.weight(if (wide) 1.35f else 1f).height(34.dp)
+                        Modifier.weight(if (wide) 1.35f else 1f).height(42.dp)
                             .clip(RoundedCornerShape(4.dp))
                             .background(Color(0xFF454A50))
                             .then(
                                 if (key == "⌫") {
                                     Modifier.pointerInput(symbols) {
                                         detectTapGestures(onPress = {
+                                            keyView.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                                             val startedAt = android.os.SystemClock.uptimeMillis()
                                             val deleteJob = repeatScope.launch {
                                                 delay(420)
@@ -801,6 +821,7 @@ private fun TitanKeyboard(c: DeckController) {
                                     }
                                 } else {
                                     Modifier.steadyTap {
+                                        keyView.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                                         when (key) {
                                             "⇧" -> shifted = !shifted
                                             else -> {
@@ -850,12 +871,16 @@ private fun TitanKeyboard(c: DeckController) {
 
 @Composable
 private fun TitanUtilityKey(label: String, modifier: Modifier, onClick: () -> Unit) {
+    val view = LocalView.current
     Box(
-        modifier.height(31.dp).clip(RoundedCornerShape(4.dp))
-            .background(Color(0xFF454A50)).steadyTap(onClick),
+        modifier.height(38.dp).clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF454A50)).steadyTap {
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                onClick()
+            },
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = Color(0xFFE7E9EB), fontSize = 9.sp)
+        Text(label, color = Color(0xFFE7E9EB), fontSize = 10.sp)
     }
 }
 

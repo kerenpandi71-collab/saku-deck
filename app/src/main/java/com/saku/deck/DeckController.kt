@@ -496,6 +496,16 @@ class DeckController(private val app: Application) {
         binding = true
         try {
             Shizuku.bindUserService(userServiceArgs, connection)
+            // Some Shizuku builds never deliver onServiceConnected after
+            // unbindUserService ran on the same connection. That is what
+            // left the deck stuck on "Menghubungkan ke Shizuku" after
+            // KELUAR. If the service is still missing after 4 s, retry.
+            main.postDelayed({
+                if (binding && service == null && hostActive && !shuttingDown) {
+                    binding = false
+                    refresh()
+                }
+            }, 4000L)
         } catch (t: Throwable) {
             binding = false
             message = "Gagal menyalakan layanan Shizuku: ${t.message}"
@@ -1005,6 +1015,7 @@ class DeckController(private val app: Application) {
     private var mouseCursorInitialized = false
     private var mouseDownTime = 0L
     private var lastHoverSentAt = 0L
+    private var lastCursorSpriteAt = 0L
     private var trackpadContactActive = false
     private var tapRelease: Runnable? = null
     private var lastMappedMoveAt = 0L
@@ -1032,8 +1043,16 @@ class DeckController(private val app: Application) {
             .coerceIn(1f, (displayW - 2).coerceAtLeast(1).toFloat())
         mouseCursorY = (mouseCursorY + deltaY * displayH / padHeight * gain)
             .coerceIn(1f, (displayH - 2).coerceAtLeast(1).toFloat())
-        trackpadCursorX = mouseCursorX / displayW
-        trackpadCursorY = mouseCursorY / displayH
+        // Throttle the on-screen cursor SPRITE to ~30 fps. Writing the
+        // state on every pointer event redrew the whole host window up to
+        // 120 times per second, starving the game of GPU/CPU time on
+        // low-end devices. Injection always uses the exact position.
+        val spriteNow = SystemClock.uptimeMillis()
+        if (spriteNow - lastCursorSpriteAt >= 33L) {
+            lastCursorSpriteAt = spriteNow
+            trackpadCursorX = mouseCursorX / displayW
+            trackpadCursorY = mouseCursorY / displayH
+        }
         if (trackpadContactActive) {
             // While dragging, the held touch contact follows the cursor.
             setMappedTouch(TRACKPAD_TOUCH_KEY, mouseCursorX, mouseCursorY, true)

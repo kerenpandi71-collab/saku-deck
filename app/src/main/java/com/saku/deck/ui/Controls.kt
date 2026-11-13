@@ -407,18 +407,25 @@ fun AnalogStick(
                         val area = size
                         val center = Offset(area.width / 2f, area.height / 2f)
                         val reach = area.width / 2f * 0.7f
+                        var lastKnobDrawAt = 0L
                         fun set(pos: Offset) {
                             var v = (pos - center) / reach
                             val len = sqrt(v.x * v.x + v.y * v.y)
                             if (len > 1f) v /= len
-                            // Quantize the drawn knob: raw pointer events would
-                            // otherwise redraw this canvas up to 120 times per
-                            // second while the stick is held, costing GPU time.
+                            // Game input always stays full-rate. The DRAWN
+                            // knob is quantized and throttled to ~30 fps:
+                            // redrawing the host window 120 times per second
+                            // while the stick is held starved the game of
+                            // GPU/CPU on low-end devices (the ML frame-drop
+                            // source when the pad is shown).
+                            callback(v.x, v.y, true)
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (now - lastKnobDrawAt < 33L && (v.x != 0f || v.y != 0f)) return
+                            lastKnobDrawAt = now
                             knob = Offset(
                                 (v.x * 12f).toInt() / 12f,
                                 (v.y * 12f).toInt() / 12f,
                             )
-                            callback(v.x, v.y, true)
                         }
                         val down = awaitFirstDown(requireUnconsumed = false)
                         try {
