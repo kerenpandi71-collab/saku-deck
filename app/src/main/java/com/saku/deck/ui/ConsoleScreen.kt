@@ -1063,6 +1063,9 @@ private fun SidePanel(left: Boolean, c: DeckController, scale: Float, modifier: 
 private fun MlLayout(c: DeckController, scale: Float, modifier: Modifier) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         val side = (maxWidth * 0.20f).coerceIn(130.dp, 230.dp)
+        // Capture scope values: maxHeight/maxWidth cannot be read via implicit
+        // receiver inside nested Box content lambdas.
+        val panelHeight = maxHeight
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Column(
                 Modifier.width(side).fillMaxHeight().padding(vertical = (4 * scale).dp),
@@ -1076,7 +1079,7 @@ private fun MlLayout(c: DeckController, scale: Float, modifier: Modifier) {
                         diameter = stickSize,
                         modifier = Modifier.offset(
                             x = side * (stickPosition.x - 0.5f),
-                            y = maxHeight * (stickPosition.y - 0.5f),
+                            y = panelHeight * (stickPosition.y - 0.5f),
                         ),
                         onMove = { x, y, active -> c.sendStick(false, x, y, active) },
                         layoutEditing = c.controlLayoutEditing,
@@ -1084,9 +1087,9 @@ private fun MlLayout(c: DeckController, scale: Float, modifier: Modifier) {
                             c.moveControlPosition(
                                 "left_stick",
                                 stickPosition.x + dx * stickSize.value / side.value.coerceAtLeast(1f),
-                                stickPosition.y + dy * stickSize.value / maxHeight.value.coerceAtLeast(1f),
+                                stickPosition.y + dy * stickSize.value / panelHeight.value.coerceAtLeast(1f),
                                 stickSize.value / (2 * side.value.coerceAtLeast(1f)),
-                                stickSize.value / (2 * maxHeight.value.coerceAtLeast(1f)),
+                                stickSize.value / (2 * panelHeight.value.coerceAtLeast(1f)),
                             )
                         },
                     )
