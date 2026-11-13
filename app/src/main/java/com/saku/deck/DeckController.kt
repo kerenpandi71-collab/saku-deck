@@ -494,9 +494,6 @@ class DeckController(private val app: Application) {
     }
 
     fun sendStick(right: Boolean, x: Float, y: Float, active: Boolean) {
-        val base = if (right) 2 else 0
-        axes[base] = x
-        axes[base + 1] = y
         val stickId = if (right) "right_stick" else "left_stick"
         val stick = touchMappings.firstOrNull { it.id == stickId }
         if (stick != null) {
