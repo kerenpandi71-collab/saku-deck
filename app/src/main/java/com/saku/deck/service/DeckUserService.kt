@@ -419,7 +419,16 @@ class DeckUserService : IDeckService.Stub() {
             event.classLoader = InputEvent::class.java.classLoader
             input = event.getParcelable("event", InputEvent::class.java) ?: return
             setDisplayIdMethod.invoke(input, displayId)
-            val accepted = injectMethod.invoke(inputManager, input, 0) as? Boolean ?: false
+            // Streams (move/hover/scroll) arrive at 60-120Hz. Injecting them
+            // WAIT_FOR_RESULT serializes every event behind a full InputDispatcher
+            // round-trip and stutters scrolling; fire-and-forget keeps the queue
+            // short. DOWN/UP/keys stay synchronous so clicks remain reliable.
+            val injectMode = if (input is android.view.MotionEvent && (
+                input.actionMasked == android.view.MotionEvent.ACTION_MOVE ||
+                input.actionMasked == android.view.MotionEvent.ACTION_HOVER_MOVE ||
+                input.actionMasked == android.view.MotionEvent.ACTION_SCROLL)
+            ) INJECT_ASYNC else INJECT_WAIT_FOR_RESULT
+            val accepted = injectMethod.invoke(inputManager, input, injectMode) as? Boolean ?: false
             lastInputError = if (accepted) "Event diterima oleh InputManager pada display $displayId."
             else "InputManager menolak event untuk display $displayId."
             if (!accepted) logInputFailure(lastInputError)
@@ -482,6 +491,9 @@ class DeckUserService : IDeckService.Stub() {
         private const val STATUS_BAR_SERVICE = "com.android.internal.statusbar.IStatusBarService"
         private const val DISABLE_HOME = 0x00200000
         private const val DISABLE_RECENT = 0x01000000
+        // InputManager.injectInputEvent modes (hidden constants).
+        private const val INJECT_WAIT_FOR_RESULT = 0
+        private const val INJECT_ASYNC = 1
 
         // DisplayManager virtual display flags (some are hidden in the SDK).
         private const val PUBLIC = 1

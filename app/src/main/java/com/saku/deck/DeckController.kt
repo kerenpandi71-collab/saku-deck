@@ -372,6 +372,10 @@ class DeckController(private val app: Application) {
 
     private val keyDownTimes = HashMap<Int, Long>()
     @Volatile private var lastTouchMoveEnqueueAt = 0L
+    private val scrollAccumLock = Any()
+    private var pendingScrollH = 0f
+    private var pendingScrollV = 0f
+    private var lastScrollSendAt = 0L
     private data class ActiveTouch(val id: Int, var x: Float, var y: Float)
     private val touchLock = Any()
     private val activeTouches = LinkedHashMap<String, ActiveTouch>()
@@ -1136,6 +1140,25 @@ class DeckController(private val app: Application) {
         val svc = service ?: return
         val id = displayId
         if (!mouseCursorInitialized || id < 0 || (horizontal == 0f && vertical == 0f)) return
+        // The gesture loop fires at raw pointer-event rate (up to 120Hz). Throttle
+        // to ~60Hz and SUM the skipped deltas so total scroll distance is exact —
+        // dropping events slowed scrolling and flooding the queue made it stutter.
+        val now = SystemClock.uptimeMillis()
+        synchronized(scrollAccumLock) {
+            pendingScrollH += horizontal
+            pendingScrollV += vertical
+            if (now - lastScrollSendAt < 16L) return
+            lastScrollSendAt = now
+        }
+        val sendH: Float
+        val sendV: Float
+        synchronized(scrollAccumLock) {
+            sendH = pendingScrollH
+            sendV = pendingScrollV
+            pendingScrollH = 0f
+            pendingScrollV = 0f
+        }
+        if (sendH == 0f && sendV == 0f) return
         val props = arrayOf(MotionEvent.PointerProperties().apply {
             this.id = 0
             toolType = MotionEvent.TOOL_TYPE_MOUSE
@@ -1143,10 +1166,9 @@ class DeckController(private val app: Application) {
         val coords = arrayOf(MotionEvent.PointerCoords().apply {
             x = mouseCursorX
             y = mouseCursorY
-            setAxisValue(MotionEvent.AXIS_HSCROLL, horizontal)
-            setAxisValue(MotionEvent.AXIS_VSCROLL, vertical)
+            setAxisValue(MotionEvent.AXIS_HSCROLL, sendH)
+            setAxisValue(MotionEvent.AXIS_VSCROLL, sendV)
         })
-        val now = SystemClock.uptimeMillis()
         val event = MotionEvent.obtain(
             now, now, MotionEvent.ACTION_SCROLL, 1, props, coords,
             0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0
@@ -1533,13 +1555,15 @@ class DeckController(private val app: Application) {
         }
         val item = PendingInput(svc, queuedEvent, id)
         synchronized(inputQueueLock) {
-            // Consecutive MOVE events describe the same active pointer stream. Keep
-            // the newest coordinates; never replace across a DOWN/UP or key barrier.
+            // Consecutive MOVE/SCROLL events describe the same active stream. Keep
+            // the newest; never replace across a DOWN/UP or key barrier. Without
+            // this, a slow drain turns scroll gestures into a stuttering backlog.
             val last = pendingInput.peekLast()
-            val replaceMove = queuedEvent is MotionEvent &&
-                queuedEvent.actionMasked == MotionEvent.ACTION_MOVE &&
+            val streamAction = (queuedEvent as? MotionEvent)?.actionMasked
+                ?.takeIf { it == MotionEvent.ACTION_MOVE || it == MotionEvent.ACTION_SCROLL }
+            val replaceMove = streamAction != null &&
                 last?.event is MotionEvent &&
-                (last.event as MotionEvent).actionMasked == MotionEvent.ACTION_MOVE &&
+                (last.event as MotionEvent).actionMasked == streamAction &&
                 last.displayId == id
             if (replaceMove) {
                 recycleInput(pendingInput.removeLast().event)
