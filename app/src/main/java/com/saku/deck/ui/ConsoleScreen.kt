@@ -1099,11 +1099,11 @@ private fun MlLayout(c: DeckController, scale: Float, modifier: Modifier) {
                     if ("home" !in c.hiddenControls) PillButton("HOME", scale) { c.sendKey(KeyEvent.KEYCODE_HOME, it) }
                 }
             }
-            ScreenArea(
-                c,
-                Modifier.weight(1f).fillMaxHeight(c.landscapeFrameHeight)
-                    .padding(horizontal = 4.dp),
-            )
+            // ML mode shows a square deck centered between the control panels.
+            BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                val deckSide = minOf(maxWidth, maxHeight) * c.landscapeFrameHeight.coerceIn(0.65f, 1f)
+                ScreenArea(c, Modifier.size(deckSide))
+            }
             Column(
                 Modifier.width(side).fillMaxHeight().padding(vertical = (4 * scale).dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

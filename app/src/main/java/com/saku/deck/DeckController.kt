@@ -252,8 +252,10 @@ class DeckController(private val app: Application) {
         app.getSharedPreferences("saku_deck_display_mode", Context.MODE_PRIVATE)
             .edit().putBoolean("ml_only", mlOnlyMode).apply()
         assistantMenuOpen = false
-        message = if (mlOnlyMode) "Mode ML aktif: analog kiri, skill kanan."
+        message = if (mlOnlyMode) "Mode ML aktif: layar kotak 720×720 di tengah."
         else "Mode gamepad lengkap aktif."
+        // Recreate/resize the virtual display to the square ML geometry.
+        ensureDisplay()
     }
 
     fun applyLandscapeResolution(width: Int, height: Int, dpi: Int) {
@@ -595,8 +597,13 @@ class DeckController(private val app: Application) {
         // Landscape defaults to 960×540 (540p); portrait continues using
         // the live host surface dimensions without inheriting Landscape settings.
         val useLandscapeCustom = surfaceW > surfaceH && landscapeResolutionEnabled
-        val w = (if (useLandscapeCustom) landscapeWidth else surfaceW).coerceAtLeast(64)
-        val h = (if (useLandscapeCustom) landscapeHeight else surfaceH).coerceAtLeast(64)
+        // ML mode always renders a square 720×720 deck centered between the
+        // control panels; the square UI surface matches this exactly.
+        val useMlSquare = mlOnlyMode
+        val w = (if (useMlSquare) ML_SQUARE_SIDE
+            else if (useLandscapeCustom) landscapeWidth else surfaceW).coerceAtLeast(64)
+        val h = (if (useMlSquare) ML_SQUARE_SIDE
+            else if (useLandscapeCustom) landscapeHeight else surfaceH).coerceAtLeast(64)
         val dpi = (if (useLandscapeCustom) landscapeDpi
             else (app.resources.displayMetrics.densityDpi * DPI_SCALE).toInt()).coerceAtLeast(120)
         val existing = displayId
@@ -1621,6 +1628,7 @@ class DeckController(private val app: Application) {
         private const val RECENT_APPS_KEY = "components"
         // Virtual display density relative to the phone, so apps fit the smaller center screen.
         private const val DPI_SCALE = 0.75f
+        private const val ML_SQUARE_SIDE = 720
         private val DEFAULT_TOUCH_MAPPINGS = listOf(
             TouchMapping("left_stick", "Analog kiri", "LS", null, 0.16f, 0.80f),
             TouchMapping("right_stick", "Analog kanan / kamera", "RS", null, 0.52f, 0.57f),
